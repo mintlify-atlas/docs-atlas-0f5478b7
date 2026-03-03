@@ -644,3 +644,97 @@ curl -d '{
 https://app.buildbuddy.io/api/v1/Run
 ```
 </CodeGroup>
+
+## CreateUserApiKey
+
+Creates an API key (authentication token) for a given user. 
+
+<Warning>
+To create API keys for users within an organization, this API must be called with an **Org admin key**. 
+
+Org admin keys can be created via the BuildBuddy UI by navigating to **Settings > Org API keys**, then creating a new key with the "Org admin" capability.
+</Warning>
+
+### Endpoint
+
+```
+POST https://app.buildbuddy.io/api/v1/CreateUserApiKey
+```
+
+### Request
+
+<ParamField path="user_id" type="string" required>
+  BuildBuddy user ID of the user to create the API key for
+  
+  Example: `US1234567890`
+</ParamField>
+
+<ParamField path="label" type="string">
+  Optional display name for the API key. This is not required to be unique
+  
+  Example: `My API key`
+</ParamField>
+
+<ParamField path="expires_in" type="duration">
+  Optional duration after which the API key should expire. If unset, the API key does not expire
+  
+  Example: `720h` (30 days), `8760h` (1 year)
+</ParamField>
+
+### Response
+
+<ResponseField name="api_key" type="ApiKey">
+  The API key that was created
+  
+  <Expandable title="ApiKey">
+    <ResponseField name="api_key_id" type="string">
+      The unique ID of this API key
+      
+      Example: `AK1234567890`
+    </ResponseField>
+    
+    <ResponseField name="value" type="string">
+      The API key value passed in API requests
+      
+      Example: `eXaMpLeSecRetKeY314159`
+      
+      <Warning>
+      This is the only time the API key value will be returned. Store it securely.
+      </Warning>
+    </ResponseField>
+    
+    <ResponseField name="label" type="string">
+      Optional display name for the API key
+    </ResponseField>
+    
+    <ResponseField name="expiration_timestamp" type="timestamp">
+      Timestamp at which the API key expires. If unset, the API key does not expire
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```bash
+curl -d '{
+  "user_id": "US1234567890",
+  "label": "CI API Key",
+  "expires_in": "8760h"
+}' \
+-H "x-buildbuddy-api-key: YOUR_ORG_ADMIN_API_KEY" \
+-H 'Content-Type: application/json' \
+https://app.buildbuddy.io/api/v1/CreateUserApiKey
+```
+
+### Response Example
+
+```json
+{
+  "apiKey": {
+    "apiKeyId": "AK9876543210",
+    "value": "bXlTZWNyZXRLZXkxMjM0NTY=",
+    "label": "CI API Key",
+    "expirationTimestamp": "2025-03-03T00:00:00Z"
+  }
+}
+```
