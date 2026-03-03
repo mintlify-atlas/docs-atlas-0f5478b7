@@ -1,0 +1,458 @@
+---
+title: Remote Execution Architecture
+description: How BuildBuddy executes build actions on remote workers
+---
+
+This document describes the architecture and data flow for BuildBuddy's remote execution service, which allows Bazel to execute build actions on remote worker machines instead of locally.
+
+## Architecture Diagram
+
+![Remote Execution Architecture](/architecture/architecture-remote-execution.png)
+
+## Overview
+
+BuildBuddy implements the Remote Execution API, allowing Bazel to offload build action execution to a pool of remote workers. This provides massive parallelism, consistent build environments, and efficient resource utilization.
+
+## Components Involved
+
+### Bazel Client
+
+The build tool requesting remote execution:
+- Analyzes build graph locally
+- Uploads inputs to CAS
+- Sends execution requests
+- Downloads outputs from cache
+- Monitors execution progress
+
+### Execution Service (Scheduler)
+
+Orchestrates remote execution:
+- Receives Execute requests
+- Validates action requirements
+- Matches actions to executors
+- Manages execution queue
+- Tracks action lifecycle
+- Returns execution results
+
+### Executor Pool
+
+Worker machines that run actions:
+- Registers with scheduler
+- Declares capabilities (platform properties)
+- Receives action assignments
+- Executes commands in isolation
+- Uploads outputs to cache
+- Reports execution status
+
+### Redis Queue
+
+Manages task distribution:
+- Queues pending actions
+- Priority-based scheduling
+- Ensures fair distribution
+- Handles executor failures
+
+### Content Addressable Storage (CAS)
+
+Stores action inputs and outputs:
+- Input files downloaded by executors
+- Output files uploaded after execution
+- Digest-based addressing
+- Shared across all executors
+
+### Action Cache
+
+Stores execution results:
+- Checks for cached results before execution
+- Stores results after execution
+- Enables build action reuse
+
+## Execution Flow
+
+### Step 1: Action Preparation
+
+1. **Local Analysis**:
+   - Bazel analyzes build graph
+   - Identifies actions to execute
+   - Determines action inputs and commands
+
+2. **Input Upload**:
+   - Bazel computes input file digests
+   - Checks which inputs are missing from CAS
+   - Uploads missing inputs to BuildBuddy
+   - Creates input root directory structure
+
+3. **Action Digest Computation**:
+   - Computes action hash from:
+     - Command line and arguments
+     - Input file digests
+     - Environment variables
+     - Platform properties
+
+### Step 2: Cache Check
+
+1. **GetActionResult Request**:
+   - Bazel checks Action Cache first
+   - Sends action digest to BuildBuddy
+
+2. **Cache Hit Path**:
+   - If cached result exists:
+     - Return ActionResult immediately
+     - Bazel skips execution
+     - Downloads outputs from CAS
+     - Continues to next action
+
+3. **Cache Miss Path**:
+   - If no cached result:
+     - Proceed to remote execution
+
+### Step 3: Execute Request
+
+1. **Bazel Sends Execute RPC**:
+   ```protobuf
+   message ExecuteRequest {
+     string instance_name = 1;
+     bool skip_cache_lookup = 3;
+     Action action = 6;
+   }
+   
+   message Action {
+     Digest command_digest = 1;
+     Digest input_root_digest = 2;
+     repeated Digest output_files = 3;
+     repeated Digest output_directories = 4;
+     Duration timeout = 6;
+     bool do_not_cache = 7;
+     Platform platform = 5;
+   }
+   ```
+
+2. **Scheduler Receives Request**:
+   - Validates action format
+   - Authenticates request
+   - Extracts platform requirements
+   - Assigns unique task ID
+
+### Step 4: Task Scheduling
+
+1. **Queue Action**:
+   - Add to Redis queue
+   - Priority based on:
+     - User priority settings
+     - Action size/complexity
+     - Queue time (fairness)
+
+2. **Executor Matching**:
+   - Find executor with matching platform
+   - Check executor capacity
+   - Consider executor health/performance
+   - Assign task to executor
+
+3. **Task Assignment**:
+   - Notify executor of new task
+   - Executor claims task
+   - Update task status to RUNNING
+
+### Step 5: Action Execution
+
+1. **Input Preparation**:
+   - Executor downloads input root from CAS
+   - Reconstructs directory structure
+   - Downloads all input files
+   - Verifies input digests
+
+2. **Environment Setup**:
+   - Create isolated execution environment:
+     - Docker container, or
+     - Podman container, or
+     - Firecracker VM, or
+     - Bare metal with sandbox
+   - Set environment variables
+   - Configure working directory
+
+3. **Command Execution**:
+   - Run the command (e.g., compiler, linker)
+   - Capture stdout and stderr
+   - Monitor resource usage
+   - Enforce timeout
+   - Record exit code
+
+4. **Output Collection**:
+   - Identify output files
+   - Compute output digests
+   - Prepare ActionResult
+
+5. **Output Upload**:
+   - Upload output files to CAS
+   - Upload stdout/stderr if requested
+   - Ensure all outputs uploaded before completing
+
+### Step 6: Result Reporting
+
+1. **Update Action Cache**:
+   - Store action digest → ActionResult mapping
+   - Unless do_not_cache=true
+   - Future executions will cache hit
+
+2. **Send ExecuteResponse**:
+   ```protobuf
+   message ExecuteResponse {
+     ActionResult result = 1;
+     bool cached_result = 2;
+     google.rpc.Status status = 3;
+     
+     message ActionResult {
+       repeated OutputFile output_files = 2;
+       int32 exit_code = 4;
+       bytes stdout_digest = 5;
+       bytes stderr_digest = 6;
+       ExecutionMetadata execution_metadata = 9;
+     }
+   }
+   ```
+
+3. **Bazel Receives Result**:
+   - Checks exit code
+   - Downloads output files from CAS
+   - Continues build with outputs
+   - Or reports action failure
+
+### Step 7: Output Download
+
+1. Bazel receives output file digests
+2. Downloads outputs from CAS
+3. Places files in local build directory
+4. Proceeds to dependent actions
+
+## Executor Management
+
+### Executor Registration
+
+1. **Executor Startup**:
+   - Executor process starts on worker machine
+   - Connects to BuildBuddy scheduler
+   - Registers capabilities:
+     - Platform properties (OS, arch, etc.)
+     - Resource capacity (CPU, memory, disk)
+     - Container/VM support
+
+2. **Health Monitoring**:
+   - Periodic heartbeats to scheduler
+   - Reports current load and availability
+   - Updates capability changes
+
+3. **Deregistration**:
+   - Graceful shutdown drains tasks
+   - Notifies scheduler of unavailability
+   - Scheduler reassigns pending tasks
+
+### Platform Properties
+
+Executors advertise capabilities:
+
+```python
+platform = {
+  "OSFamily": "linux",
+  "Arch": "amd64",
+  "container-image": "docker://ubuntu:20.04",
+  "Pool": "default",
+}
+```
+
+Actions request requirements:
+
+```python
+exec_properties = {
+  "OSFamily": "linux",
+  "Arch": "amd64",
+  "container-image": "docker://my-build-image:v1",
+}
+```
+
+Scheduler matches based on properties.
+
+### Isolation Mechanisms
+
+**Docker Containers**:
+- Each action runs in fresh container
+- Specified by container-image property
+- Provides filesystem isolation
+- Manages resource limits
+
+**Podman Containers**:
+- Rootless container execution
+- Better security isolation
+- Compatible with Docker images
+
+**Firecracker VMs**:
+- Lightweight microVMs
+- Stronger isolation than containers
+- Fast startup (sub-second)
+- Used for untrusted code
+
+**Bare Metal Sandbox**:
+- Sandboxing without containers
+- Faster for trusted code
+- Limited isolation
+
+## Performance Optimizations
+
+### Input Deduplication
+
+- Content addressing eliminates duplicate uploads
+- Common inputs (toolchains, SDKs) uploaded once
+- Executors cache frequently used inputs locally
+
+### Persistent Workers
+
+For JVM-based tools (Java, Kotlin, Scala):
+
+1. Keep compiler process running between actions
+2. Avoid JVM startup overhead
+3. Warm JIT compilation
+4. Significant speedup for incremental builds
+
+### Local Execution Cache
+
+Executor maintains local cache:
+
+1. Input files cached on disk
+2. Container images cached
+3. Avoids repeated CAS downloads
+4. LRU eviction when disk fills
+
+### Action Prioritization
+
+- Critical path actions prioritized
+- Large actions scheduled early
+- Fair queuing prevents starvation
+- Priority can be set per user/org
+
+### Speculative Execution
+
+For slow actions:
+
+1. Execute same action on multiple executors
+2. Use result from first to complete
+3. Cancel redundant executions
+4. Reduces tail latency
+
+## Failure Handling
+
+### Executor Failures
+
+1. **Executor Crash**:
+   - Heartbeat timeout detected
+   - Scheduler marks executor unhealthy
+   - Reschedules in-progress actions
+
+2. **Network Partition**:
+   - Executor isolated from scheduler
+   - Actions eventually timeout
+   - Executor re-registers on reconnect
+
+### Action Failures
+
+1. **Command Failure** (non-zero exit code):
+   - Result returned with exit code
+   - Bazel handles as normal build failure
+   - Logs available for debugging
+
+2. **Timeout**:
+   - Action exceeds timeout
+   - Executor kills process
+   - Returns DEADLINE_EXCEEDED error
+
+3. **Resource Exhaustion**:
+   - Out of memory, disk space
+   - Executor fails action
+   - May retry on different executor
+
+### Retries
+
+- Transient errors (network, executor failure) retried automatically
+- Configurable retry limits
+- Exponential backoff
+- Non-transient errors (command failure) not retried
+
+## Monitoring and Metrics
+
+### Execution Metrics
+
+- Actions queued, running, completed
+- Queue time (time waiting for executor)
+- Execution time (time running on executor)
+- Upload/download time and bytes
+- Cache hit rate (action cache)
+- Executor utilization
+
+### Performance Metrics
+
+- End-to-end execution latency (p50, p95, p99)
+- Input download time
+- Output upload time
+- Scheduler overhead
+
+### Reliability Metrics
+
+- Action failure rate (by type)
+- Executor failure rate
+- Retry rate
+- Timeout rate
+
+## Configuration Example
+
+### Server Configuration
+
+```yaml
+remote_execution:
+  enable: true
+  
+  # Redis for task queue
+  redis:
+    host: localhost:6379
+  
+  # Executor configuration
+  executor:
+    pool_size: 10
+    platform_properties:
+      OSFamily: linux
+      Arch: amd64
+      Pool: default
+    
+    isolation:
+      type: docker
+      default_image: ubuntu:20.04
+    
+    resources:
+      cpu: 8
+      memory_gb: 16
+      disk_gb: 100
+```
+
+### Bazel Client Configuration
+
+```bash
+# .bazelrc
+build --remote_executor=grpcs://remote.buildbuddy.io
+build --remote_cache=grpcs://remote.buildbuddy.io
+build --remote_upload_local_results=true
+build --remote_timeout=600
+
+# Platform for remote execution
+build --host_platform=@buildbuddy_toolchain//:platform
+build --platforms=@buildbuddy_toolchain//:platform
+build --extra_execution_platforms=@buildbuddy_toolchain//:platform
+
+# Custom platform properties
+build --remote_default_exec_properties=OSFamily=linux
+build --remote_default_exec_properties=Arch=amd64
+build --remote_default_exec_properties=container-image=docker://my-image:v1
+```
+
+## Related Topics
+
+- [Architecture Overview](/architecture-overview)
+- [Cache Read Architecture](/architecture-cache-read)
+- [Cache Write Architecture](/architecture-cache-write)
+- [Self-Hosted Executor Architecture](/architecture-self-hosted-executor)

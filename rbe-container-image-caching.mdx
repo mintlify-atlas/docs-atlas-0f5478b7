@@ -1,0 +1,75 @@
+---
+title: RBE Container Image Caching
+description: Cache container images in BuildBuddy's remote cache to speed up action startup and reduce registry egress costs
+---
+
+Remote Build Execution (RBE) runs actions inside a container. By default, actions use an Ubuntu 16.04 container image. You can specify a [custom container image](/rbe-platforms#using-a-custom-docker-image).
+
+BuildBuddy stores container images on disk to make action startup fast and to avoid fetching container images each time an action runs. As executors scale up and down or remove unused container images from disk, they may need to fetch the image from the upstream registry.
+
+<Info>
+BuildBuddy RBE caches container images in the same remote cache that stores Bazel build artifacts. If an action needs to run inside a container image that is not already on the executor's disk, the executor can download it from the remote cache.
+</Info>
+
+## Benefits
+
+<CardGroup cols={2}>
+  <Card title="Faster Action Startup" icon="bolt">
+    Images are pulled from BuildBuddy's remote cache instead of external registries, reducing startup time.
+  </Card>
+  <Card title="Reduced Egress Costs" icon="dollar-sign">
+    Downloads from the remote cache count as Internal Download, saving you from paying for egress from your registry provider.
+  </Card>
+  <Card title="Improved Reliability" icon="shield">
+    Cached images remain available even if the upstream registry experiences issues.
+  </Card>
+  <Card title="Automatic Management" icon="wand-magic-sparkles">
+    BuildBuddy automatically manages the image cache lifecycle without manual intervention.
+  </Card>
+</CardGroup>
+
+## How it works
+
+<Steps>
+  <Step title="First run">
+    When an action runs with a specific container image for the first time, the executor pulls the image from the upstream registry (e.g., Docker Hub, GCR, ECR).
+  </Step>
+  
+  <Step title="Cache storage">
+    After pulling the image, BuildBuddy stores it in both:
+    - The executor's local disk for immediate reuse
+    - The remote cache for sharing across executors
+  </Step>
+  
+  <Step title="Subsequent runs">
+    When another executor needs the same image, it checks:
+    1. Local disk first (fastest)
+    2. BuildBuddy's remote cache (fast, no egress cost)
+    3. Upstream registry (slowest, incurs egress cost)
+  </Step>
+</Steps>
+
+## Cache behavior
+
+<AccordionGroup>
+  <Accordion title="Cache invalidation">
+    Container images are cached based on their digest (content hash). If you update an image with the same tag, BuildBuddy will detect the new digest and fetch the updated image.
+  </Accordion>
+  
+  <Accordion title="Executor scaling">
+    When new executors are added to your pool, they automatically benefit from the shared image cache without needing to pull from external registries.
+  </Accordion>
+  
+  <Accordion title="Cache eviction">
+    Images may be evicted from local disk when:
+    - Disk space is needed for other operations
+    - The image hasn't been used recently
+    - The executor is restarted
+    
+    However, evicted images remain in the remote cache and can be quickly restored.
+  </Accordion>
+</AccordionGroup>
+
+<Tip>
+To maximize cache effectiveness, use specific image tags or digests rather than `latest` or other mutable tags. This ensures consistent cache hits across builds.
+</Tip>

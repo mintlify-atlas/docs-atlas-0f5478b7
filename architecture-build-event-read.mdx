@@ -1,0 +1,161 @@
+---
+title: Build Event Read Architecture
+description: How BuildBuddy retrieves and displays build event data
+---
+
+This document describes the architecture and data flow when reading build event data from BuildBuddy. Understanding this flow is essential for optimizing query performance and troubleshooting issues.
+
+## Architecture Diagram
+
+![Build Event Read Architecture](/architecture/architecture-build-event-read.png)
+
+## Overview
+
+When a user or API client requests build event data (such as viewing an invocation in the UI or calling the GetInvocation API), BuildBuddy follows a specific path to retrieve and serve that data efficiently.
+
+## Components Involved
+
+### Web UI / API Client
+
+The entry point for read requests:
+- User navigates to an invocation page in the browser
+- API client makes a GetInvocation request
+- CLI tools query build data
+
+### API Server
+
+Handles incoming requests:
+- Authenticates the request using API keys or session cookies
+- Validates request parameters
+- Routes to appropriate service handlers
+- Formats and returns responses
+
+### Build Event Service
+
+Core service for retrieving build data:
+- Queries the database for invocation metadata
+- Retrieves associated targets, actions, and test results
+- Applies filters and pagination
+- Constructs response objects
+
+### Database
+
+Stores structured build metadata:
+- Invocation records with status, timing, and user info
+- Target records with labels, status, and timing
+- Action records with file references
+- Test results and logs references
+
+### Cache / Storage
+
+Stores large blob data:
+- Build logs
+- Test outputs
+- Build artifacts
+- Retrieved separately from metadata when needed
+
+## Data Flow
+
+### Step 1: Request Authentication
+
+1. Client sends request with authentication credentials
+2. API server validates API key or session token
+3. Authorization checks determine data access permissions
+4. Request is allowed to proceed or rejected
+
+### Step 2: Metadata Query
+
+1. Build Event Service constructs SQL query based on request
+2. Query includes filters (invocation ID, commit SHA, etc.)
+3. Database returns matching invocation records
+4. Associated targets and actions are fetched if requested
+
+### Step 3: Data Enrichment
+
+1. Service adds computed fields (duration, cache hit rate)
+2. Formats timestamps and status codes
+3. Constructs navigation links and URLs
+4. Applies any post-processing filters
+
+### Step 4: Blob Retrieval (Optional)
+
+1. If logs or artifacts are requested, service retrieves URIs
+2. Fetches blob data from storage backend
+3. Applies decompression if needed
+4. Includes blob data in response or provides signed URLs
+
+### Step 5: Response Construction
+
+1. Service assembles all data into response format
+2. Applies pagination (next_page_token)
+3. Serializes to JSON or Protocol Buffer
+4. Returns response to client
+
+## Performance Considerations
+
+### Database Indexing
+
+Optimal indexes are critical for read performance:
+- Invocation ID (primary key)
+- Commit SHA + created_at (for repo queries)
+- User ID + created_at (for user history)
+- Composite indexes for common filter combinations
+
+### Caching Strategies
+
+1. **Metadata Caching**: Frequently accessed invocations cached in memory
+2. **CDN Caching**: Static assets and public invocation pages
+3. **Query Result Caching**: Common queries cached for short periods
+
+### Pagination
+
+Large result sets are paginated:
+- Default page size limits prevent oversized responses
+- Cursor-based pagination for consistent results
+- Clients use next_page_token for subsequent pages
+
+### Lazy Loading
+
+Expensive data is loaded only when requested:
+- Build logs retrieved on-demand
+- Artifacts loaded separately from metadata
+- Child invocations fetched only if include_child_invocations=true
+
+## API Examples
+
+### Get Invocation by ID
+
+```bash
+curl -d '{"selector": {"invocation_id":"abc123"}}' \
+  -H 'x-buildbuddy-api-key: YOUR_API_KEY' \
+  -H 'Content-Type: application/json' \
+  https://app.buildbuddy.io/api/v1/GetInvocation
+```
+
+### Get Invocations by Commit SHA
+
+```bash
+curl -d '{"selector": {"commit_sha":"800f549937a4c0a1614e65501caf7577d2a00624"}}' \
+  -H 'x-buildbuddy-api-key: YOUR_API_KEY' \
+  -H 'Content-Type: application/json' \
+  https://app.buildbuddy.io/api/v1/GetInvocation
+```
+
+### Get Invocation with Metadata
+
+```bash
+curl -d '{
+  "selector": {"invocation_id":"abc123"},
+  "include_metadata": true,
+  "include_artifacts": true
+}' \
+  -H 'x-buildbuddy-api-key: YOUR_API_KEY' \
+  -H 'Content-Type: application/json' \
+  https://app.buildbuddy.io/api/v1/GetInvocation
+```
+
+## Related Topics
+
+- [Build Event Write Architecture](/architecture-build-event-write)
+- [Enterprise API](/enterprise-api)
+- [Architecture Overview](/architecture-overview)

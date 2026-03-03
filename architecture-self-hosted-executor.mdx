@@ -1,0 +1,556 @@
+---
+title: Self-Hosted Executor Architecture
+description: How to deploy and manage your own BuildBuddy executors
+---
+
+This document describes the architecture and deployment of self-hosted BuildBuddy executors, allowing you to run remote execution on your own infrastructure while using BuildBuddy's scheduler and cache.
+
+## Architecture Diagram
+
+![Self-Hosted Executor Architecture](/architecture/architecture-self-hosted-executor.png)
+
+## Overview
+
+Self-hosted executors allow you to:
+
+- Run builds on your own hardware or cloud infrastructure
+- Use custom build images and tools
+- Keep sensitive code and data within your network
+- Scale execution capacity independently
+- Integrate with existing CI/CD infrastructure
+
+Executors connect to BuildBuddy's scheduler service but run entirely within your environment.
+
+## Architecture
+
+### Components
+
+**BuildBuddy Cloud/Server**:
+- Scheduler service (task queue)
+- Remote cache (CAS + Action Cache)
+- Build event service
+- Web UI and API
+
+**Self-Hosted Executors**:
+- Executor process running in your environment
+- Connects to BuildBuddy scheduler via gRPC
+- Pulls actions from queue
+- Executes builds locally
+- Uploads results to cache
+
+**Your Infrastructure**:
+- Virtual machines or bare metal servers
+- Container orchestration (Kubernetes, ECS, etc.)
+- Private network with internet egress
+- Local storage for caching
+
+### Network Architecture
+
+```
+Your Infrastructure                    BuildBuddy Cloud
+┌─────────────────────┐                ┌──────────────┐
+│                     │                │              │
+│  ┌──────────────┐   │                │  Scheduler   │
+│  │  Executor 1  │───┼────────────────▶  Service     │
+│  └──────────────┘   │   gRPC/TLS     │              │
+│                     │                │  Cache       │
+│  ┌──────────────┐   │                │  Service     │
+│  │  Executor 2  │───┼────────────────▶              │
+│  └──────────────┘   │                │  BES         │
+│                     │                │  Service     │
+│  ┌──────────────┐   │                │              │
+│  │  Executor N  │───┼────────────────▶              │
+│  └──────────────┘   │                └──────────────┘
+│                     │
+│  Private Network    │
+└─────────────────────┘
+```
+
+Key points:
+- Executors initiate outbound connections to BuildBuddy
+- No inbound connections required
+- Works through corporate firewalls and NAT
+- All communication over gRPC with TLS
+
+## Deployment Options
+
+### 1. Docker Container
+
+Simplest deployment method:
+
+```bash
+docker run -d \
+  --name buildbuddy-executor \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -e EXECUTOR_API_KEY=your_api_key \
+  -e EXECUTOR_SERVER=grpcs://remote.buildbuddy.io \
+  gcr.io/flame-public/buildbuddy-executor-enterprise:latest
+```
+
+**Pros**:
+- Quick to get started
+- Easy to update
+- Good for testing
+
+**Cons**:
+- Limited isolation
+- Resource management requires Docker configuration
+
+### 2. Kubernetes
+
+Recommended for production:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: buildbuddy-executor
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: buildbuddy-executor
+  template:
+    metadata:
+      labels:
+        app: buildbuddy-executor
+    spec:
+      containers:
+      - name: executor
+        image: gcr.io/flame-public/buildbuddy-executor-enterprise:latest
+        env:
+        - name: EXECUTOR_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: buildbuddy-secrets
+              key: executor-api-key
+        - name: EXECUTOR_SERVER
+          value: grpcs://remote.buildbuddy.io
+        resources:
+          requests:
+            cpu: 4
+            memory: 8Gi
+          limits:
+            cpu: 8
+            memory: 16Gi
+        volumeMounts:
+        - name: cache
+          mountPath: /data/cache
+      volumes:
+      - name: cache
+        emptyDir: {}
+```
+
+**Pros**:
+- Automatic scaling
+- Health monitoring and restarts
+- Resource management
+- Easy to manage multiple executors
+
+**Cons**:
+- Requires Kubernetes cluster
+- More complex configuration
+
+### 3. Virtual Machines
+
+For bare-metal performance:
+
+```bash
+# Install executor binary
+curl -L https://buildbuddy.io/executor -o /usr/local/bin/buildbuddy-executor
+chmod +x /usr/local/bin/buildbuddy-executor
+
+# Create systemd service
+cat > /etc/systemd/system/buildbuddy-executor.service <<EOF
+[Unit]
+Description=BuildBuddy Executor
+After=network.target
+
+[Service]
+Type=simple
+User=buildbuddy
+Environment="EXECUTOR_API_KEY=your_api_key"
+Environment="EXECUTOR_SERVER=grpcs://remote.buildbuddy.io"
+ExecStart=/usr/local/bin/buildbuddy-executor
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Enable and start
+systemctl enable buildbuddy-executor
+systemctl start buildbuddy-executor
+```
+
+**Pros**:
+- Full control over environment
+- Maximum performance
+- Can use specialized hardware (GPUs, etc.)
+
+**Cons**:
+- Manual scaling
+- More operational overhead
+
+### 4. Cloud Provider Services
+
+**AWS ECS**:
+```json
+{
+  "family": "buildbuddy-executor",
+  "containerDefinitions": [
+    {
+      "name": "executor",
+      "image": "gcr.io/flame-public/buildbuddy-executor-enterprise:latest",
+      "environment": [
+        {"name": "EXECUTOR_SERVER", "value": "grpcs://remote.buildbuddy.io"}
+      ],
+      "secrets": [
+        {"name": "EXECUTOR_API_KEY", "valueFrom": "arn:aws:secretsmanager:..."}
+      ]
+    }
+  ]
+}
+```
+
+**GCP Cloud Run** / **Azure Container Instances**: Similar configurations
+
+## Configuration
+
+### Basic Configuration
+
+```yaml
+# executor.yaml
+executor:
+  # Connection to BuildBuddy
+  server: grpcs://remote.buildbuddy.io
+  api_key: your_api_key_here
+  
+  # Executor identity
+  pool_name: default
+  instance_name: executor-1
+  
+  # Resources
+  num_concurrent_actions: 10
+  
+  # Platform properties
+  platform:
+    OSFamily: linux
+    Arch: amd64
+    Pool: default
+```
+
+### Advanced Configuration
+
+```yaml
+executor:
+  server: grpcs://remote.buildbuddy.io
+  api_key: your_api_key_here
+  
+  # Resource limits
+  num_concurrent_actions: 10
+  memory_bytes: 16000000000  # 16GB
+  milli_cpu: 8000             # 8 CPUs
+  
+  # Isolation
+  isolation:
+    type: docker  # or podman, firecracker, sandbox
+    default_image: ubuntu:20.04
+    docker_socket: /var/run/docker.sock
+    network_mode: bridge
+    
+  # Local cache
+  local_cache:
+    enable: true
+    root_directory: /data/cache
+    max_size_bytes: 50000000000  # 50GB
+    
+  # Platform properties
+  platform:
+    OSFamily: linux
+    Arch: amd64
+    Pool: default
+    container-image: docker://my-build-image:v1
+    
+  # Timeouts
+  default_timeout: 600s
+  max_timeout: 3600s
+  
+  # Debugging
+  enable_debug_logging: false
+```
+
+## Isolation Mechanisms
+
+### Docker Containers
+
+**Configuration**:
+```yaml
+isolation:
+  type: docker
+  default_image: ubuntu:20.04
+  docker_socket: /var/run/docker.sock
+```
+
+**How it works**:
+1. Each action runs in fresh container
+2. Container image specified by action or default
+3. Inputs mounted into container
+4. Command executed
+5. Outputs extracted
+6. Container destroyed
+
+**Benefits**:
+- Strong filesystem isolation
+- Reproducible environments
+- Easy to customize (just change image)
+
+**Limitations**:
+- Requires Docker daemon
+- Container startup overhead (usually &lt;1s)
+
+### Podman Containers
+
+**Configuration**:
+```yaml
+isolation:
+  type: podman
+  default_image: ubuntu:20.04
+```
+
+**Benefits**:
+- Rootless execution (better security)
+- Compatible with Docker images
+- No daemon required
+
+### Firecracker VMs
+
+**Configuration**:
+```yaml
+isolation:
+  type: firecracker
+  kernel_image_path: /path/to/vmlinux
+  rootfs_image_path: /path/to/rootfs.ext4
+```
+
+**Benefits**:
+- Strong isolation (hardware virtualization)
+- Fast startup (&lt;1s)
+- Minimal overhead
+
+**Use cases**:
+- Running untrusted code
+- Multi-tenant environments
+- Security-sensitive builds
+
+### Bare Metal Sandbox
+
+**Configuration**:
+```yaml
+isolation:
+  type: sandbox
+```
+
+**Benefits**:
+- Lowest overhead
+- Fastest execution
+
+**Limitations**:
+- Minimal isolation
+- Only for trusted code
+
+## Custom Build Images
+
+Create custom images with your tools:
+
+```dockerfile
+# Dockerfile
+FROM ubuntu:20.04
+
+# Install build tools
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    clang \
+    cmake \
+    git \
+    python3
+
+# Install custom tools
+COPY my-tool /usr/local/bin/
+
+# Set up environment
+ENV PATH=/usr/local/bin:$PATH
+```
+
+Build and push:
+```bash
+docker build -t my-registry/build-image:v1 .
+docker push my-registry/build-image:v1
+```
+
+Use in Bazel:
+```python
+# BUILD
+cc_binary(
+    name = "my_binary",
+    srcs = ["main.cc"],
+    exec_properties = {
+        "container-image": "docker://my-registry/build-image:v1",
+    },
+)
+```
+
+## Scaling
+
+### Horizontal Scaling
+
+Add more executor instances:
+
+**Kubernetes**:
+```bash
+kubectl scale deployment buildbuddy-executor --replicas=20
+```
+
+**Docker Swarm**:
+```bash
+docker service scale buildbuddy-executor=20
+```
+
+**Manual**:
+- Deploy additional VMs
+- Run executor on each
+- All connect to same scheduler
+
+### Auto-scaling
+
+**Kubernetes HPA**:
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: buildbuddy-executor
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: buildbuddy-executor
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+```
+
+**AWS Auto Scaling Group**:
+- Configure ASG for executor instances
+- Scale based on CPU or custom metrics
+- BuildBuddy provides queue depth metrics
+
+## Monitoring
+
+### Health Checks
+
+```bash
+# Check executor is running
+curl http://localhost:8080/healthz
+
+# Check connection to BuildBuddy
+curl http://localhost:8080/statusz
+```
+
+### Metrics
+
+Executor exposes Prometheus metrics:
+
+```bash
+curl http://localhost:9090/metrics
+```
+
+Key metrics:
+- `buildbuddy_executor_tasks_started_total`
+- `buildbuddy_executor_tasks_completed_total`
+- `buildbuddy_executor_task_duration_seconds`
+- `buildbuddy_executor_cpu_utilization`
+- `buildbuddy_executor_memory_utilization`
+
+### Logs
+
+```bash
+# Docker
+docker logs buildbuddy-executor
+
+# Kubernetes
+kubectl logs -l app=buildbuddy-executor
+
+# Systemd
+journalctl -u buildbuddy-executor -f
+```
+
+## Security
+
+### API Key Management
+
+Store API keys securely:
+
+**Kubernetes Secret**:
+```bash
+kubectl create secret generic buildbuddy-secrets \
+  --from-literal=executor-api-key=your_key_here
+```
+
+**AWS Secrets Manager**:
+```bash
+aws secretsmanager create-secret \
+  --name buildbuddy/executor-api-key \
+  --secret-string "your_key_here"
+```
+
+### Network Security
+
+- TLS required for all connections
+- Firewall rules:
+  - Allow outbound to BuildBuddy (port 443/1986)
+  - No inbound connections required
+- Private network for executors
+- VPC/subnet isolation
+
+### Isolation
+
+- Use Firecracker VMs for untrusted code
+- Run executors in separate network segment
+- Limit resource access via IAM/RBAC
+- Monitor for suspicious activity
+
+## Troubleshooting
+
+### Executor not connecting
+
+1. Check API key is correct
+2. Verify network connectivity to BuildBuddy
+3. Check firewall rules allow outbound HTTPS
+4. Review executor logs for errors
+
+### Slow execution
+
+1. Check executor resource utilization
+2. Monitor network bandwidth
+3. Check local cache hit rate
+4. Review action timeout settings
+
+### Actions failing
+
+1. Check action logs in BuildBuddy UI
+2. Verify container image is accessible
+3. Check resource limits (memory, disk)
+4. Review platform property matching
+
+## Related Topics
+
+- [Remote Execution Architecture](/architecture-remote-build)
+- [Architecture Overview](/architecture-overview)
+- [Cache Read Architecture](/architecture-cache-read)
+- [Cache Write Architecture](/architecture-cache-write)

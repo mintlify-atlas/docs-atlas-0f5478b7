@@ -1,0 +1,186 @@
+---
+title: Prometheus Metrics for Cloud
+description: Monitor BuildBuddy Cloud usage with Prometheus metrics
+---
+
+For cloud users, BuildBuddy exposes [Prometheus](https://prometheus.io) metrics to monitor and alert on their usage.
+
+## Overview
+
+BuildBuddy Cloud provides Prometheus-compatible metrics that allow you to:
+
+- Monitor build frequency and success rates
+- Track cache hit rates and performance
+- Measure remote execution usage
+- Set up alerts for anomalies
+- Create custom dashboards
+
+## Configuration
+
+To fetch Prometheus metrics, add the following [scrape config](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#scrape_config) to your Prometheus configuration:
+
+```yaml
+global:
+  scrape_interval: 3600s
+
+scrape_configs:
+  - job_name: buildbuddy
+    scheme: https
+    authorization:
+      type: "x-buildbuddy-api-key"
+      credentials: "<buildbuddy_api_key>"
+    metrics_path: "/api/v1/metrics"
+    static_configs:
+      - targets: ["app.buildbuddy.io"]
+```
+
+<Note>
+Replace `<buildbuddy_api_key>` with your actual BuildBuddy API key. You can create an API key in the BuildBuddy UI under Settings > API Keys.
+</Note>
+
+## Scrape Interval
+
+We recommend a scrape interval of 1 hour (3600s) as shown above. Cloud metrics are aggregated and updated hourly, so more frequent scraping will not provide additional data.
+
+## Visualization
+
+To view these metrics in a live-updating dashboard, we recommend using a tool like [Grafana](https://grafana.com).
+
+### Grafana Setup
+
+1. **Add Prometheus as a data source**:
+   - In Grafana, go to Configuration > Data Sources
+   - Add Prometheus
+   - Enter your Prometheus server URL
+
+2. **Create dashboards**:
+   - Import community dashboards for Prometheus metrics
+   - Or create custom dashboards with BuildBuddy-specific queries
+
+3. **Set up alerts**:
+   - Configure alert rules in Grafana
+   - Get notified when metrics exceed thresholds
+
+## Available Metrics
+
+BuildBuddy Cloud exposes metrics for:
+
+### Build Metrics
+- Total builds over time
+- Build success/failure rates
+- Build duration statistics
+- Builds by user and repository
+
+### Cache Metrics
+- Cache hit rates (action cache and CAS)
+- Cache read/write bytes
+- Cache performance (latency)
+
+### Remote Execution Metrics
+- Actions executed remotely
+- Execution duration
+- Executor utilization
+- Queue times
+
+### API Metrics
+- API request rates
+- API latency
+- API error rates
+
+<Note>
+The specific metrics available depend on your BuildBuddy Cloud plan and usage patterns.
+</Note>
+
+## Example Queries
+
+Here are some example PromQL queries you can use:
+
+### Build Success Rate
+
+```promql
+sum(rate(buildbuddy_builds_completed_total{status="success"}[1h])) 
+/ 
+sum(rate(buildbuddy_builds_completed_total[1h]))
+```
+
+### Cache Hit Rate
+
+```promql
+sum(rate(buildbuddy_cache_hits_total[1h])) 
+/ 
+sum(rate(buildbuddy_cache_requests_total[1h]))
+```
+
+### Average Build Duration
+
+```promql
+rate(buildbuddy_build_duration_seconds_sum[1h]) 
+/ 
+rate(buildbuddy_build_duration_seconds_count[1h])
+```
+
+## Authentication
+
+Metrics are authenticated using your BuildBuddy API key. The API key must have read permissions for metrics.
+
+**Header format**:
+```
+Authorization: x-buildbuddy-api-key YOUR_API_KEY
+```
+
+Or in Prometheus configuration:
+```yaml
+authorization:
+  type: "x-buildbuddy-api-key"
+  credentials: "YOUR_API_KEY"
+```
+
+## Security
+
+- API keys should be kept secret and rotated regularly
+- Use HTTPS for all metric requests (enforced by BuildBuddy)
+- Metrics are scoped to your organization
+- No personally identifiable information is exposed
+
+## Limits
+
+- Metrics endpoint rate limit: 100 requests per hour
+- Metric retention: 90 days
+- Maximum time range per query: 30 days
+
+## Troubleshooting
+
+### No data returned
+
+- Verify your API key is correct and has metrics permissions
+- Check that you're using HTTPS scheme
+- Ensure the authorization header format is correct
+
+### Missing metrics
+
+- Some metrics only appear after specific features are used
+- Check your BuildBuddy plan includes the feature you're monitoring
+- Verify data is being generated (check BuildBuddy UI)
+
+### Stale data
+
+- Cloud metrics are updated hourly
+- Check your scrape interval isn't too frequent
+- Verify Prometheus is successfully scraping the endpoint
+
+## Support
+
+For questions about metrics or to request additional metrics, contact BuildBuddy support at support@buildbuddy.io.
+
+## Related Topics
+
+- [Enterprise API](/enterprise-api)
+- [Prometheus Metrics On-Prem](/prometheus-metrics-on-prem)
+
+<Info>
+For a complete list of available metrics with descriptions, build the BuildBuddy source:
+```bash
+bazel build //enterprise/server/backends/prom/generate_docs
+```
+This generates comprehensive metric documentation at `bazel-bin/enterprise/server/backends/prom/generate_docs/docs.mdx`
+</Info>

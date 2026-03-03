@@ -1,0 +1,34 @@
+---
+title: Integration Configuration
+sidebarTitle: Integrations
+---
+
+A section configuring optional external services BuildBuddy can integrate with, like Slack.
+
+<Note>
+This section is **optional**.
+</Note>
+
+## Configuration Options
+
+### Slack Integration
+
+<ParamField path="slack" type="object">
+  A section configuring Slack integration.
+  
+  <ParamField path="slack.webhook_url" type="string" required>
+    A webhook url to post build update messages to.
+  </ParamField>
+</ParamField>
+
+## Getting a webhook url
+
+For more instructions on how to get a Slack webhook url, see the [Slack webhooks documentation](https://api.slack.com/messaging/webhooks#getting_started).
+
+## Example Configuration
+
+```yaml config.yaml
+integrations:
+  slack:
+    webhook_url: "https://hooks.slack.com/services/AAAAAAAAA/BBBBBBBBB/1D36mNyB5nJFCBiFlIOUsKzkW"
+```

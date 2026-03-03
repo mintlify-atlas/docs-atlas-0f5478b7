@@ -1,0 +1,41 @@
+---
+title: Database Configuration
+sidebarTitle: Database
+---
+
+The database section configures the database that BuildBuddy stores metadata in.
+
+<Warning>
+This section is **required** for BuildBuddy to function.
+</Warning>
+
+## Configuration Options
+
+### Required Options
+
+<ParamField path="data_source" type="string" required>
+  This is a connection string used by the database driver to connect to the database. MySQL, PostgreSQL, and SQLite databases are supported.
+</ParamField>
+
+## Example Configurations
+
+### SQLite
+
+```yaml config.yaml
+database:
+  data_source: "sqlite3:///tmp/buildbuddy.db"
+```
+
+### MySQL
+
+```yaml config.yaml
+database:
+  data_source: "mysql://buildbuddy_user:pAsSwOrD@tcp(12.34.56.78)/buildbuddy_db"
+```
+
+### PostgreSQL
+
+```yaml config.yaml
+database:
+  data_source: "postgresql://buildbuddy_user:pAsSwOrD@12.34.56.78:5433/buildbuddy_db"
+```

@@ -1,0 +1,43 @@
+---
+title: BuildBuddy Flags
+sidebarTitle: Flags
+---
+
+There are several configuration options that are not in the BuildBuddy configuration file. These are:
+
+<ParamField path="--config_file" type="string">
+  The path to a config.yaml file from which to read configuration options.
+</ParamField>
+
+<ParamField path="--listen" type="string" default="0.0.0.0">
+  The interface that BuildBuddy will listen on. Defaults to 0.0.0.0 (all interfaces)
+</ParamField>
+
+<ParamField path="--port" type="integer" default="8080">
+  The port to listen for HTTP traffic on.
+</ParamField>
+
+<ParamField path="--grpc_port" type="integer" default="1985">
+  The port to listen for gRPC traffic on.
+</ParamField>
+
+<ParamField path="--monitoring_port" type="integer" default="9090">
+  The port to listen for Prometheus metrics requests on.
+</ParamField>
+
+## Configuration options as flags
+
+Additionally any [configuration option](/config) can also be specified as a flag instead using dot notation.
+
+For example the following configuration option:
+
+```yaml config.yaml
+database:
+  data_source: "mysql://user:password@tcp(12.34.56.78)/buildbuddy_db"
+```
+
+Would be specified as a flag like so:
+
+```bash
+--database.data_source="mysql://user:password@tcp(12.34.56.78)/buildbuddy_db"
+```

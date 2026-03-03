@@ -1,0 +1,59 @@
+---
+title: App Configuration
+sidebarTitle: App
+---
+
+The app section contains app-level options.
+
+<Warning>
+This section is **required** for BuildBuddy to function.
+</Warning>
+
+## Configuration Options
+
+### Required Options
+
+<ParamField path="build_buddy_url" type="string" required>
+  Configures the external URL where your BuildBuddy instance can be found.
+  
+  <Note>
+    This does not actually change the server address or port. See [flags documentation](/config-flags) for information on how to configure ports.
+  </Note>
+</ParamField>
+
+### Optional Options
+
+<ParamField path="events_api_url" type="string">
+  Overrides the default build event protocol gRPC address shown by BuildBuddy on the configuration screen.
+  
+  <Note>
+    This does not actually change the server address.
+  </Note>
+</ParamField>
+
+<ParamField path="cache_api_url" type="string">
+  Overrides the default remote cache protocol gRPC address shown by BuildBuddy on the configuration screen.
+  
+  <Note>
+    This does not actually change the server address.
+  </Note>
+</ParamField>
+
+<ParamField path="remote_execution_api_url" type="string">
+  Overrides the default remote execution protocol gRPC address shown by BuildBuddy on the configuration screen.
+  
+  <Note>
+    This does not actually change the server address.
+  </Note>
+</ParamField>
+
+<ParamField path="default_to_dense_mode" type="boolean">
+  Enables Dense UI mode by default.
+</ParamField>
+
+## Example Configuration
+
+```yaml config.yaml
+app:
+  build_buddy_url: "http://buildbuddy.acme.corp"
+```

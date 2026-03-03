@@ -1,0 +1,106 @@
+---
+title: All Configuration Options
+sidebarTitle: All Options
+---
+
+This reference contains working, documented YAML configs for each BuildBuddy binary
+containing every option that that binary accepts, each set to the default value
+for that option. Any option that can be specified in the YAML config can also be
+passed on the command line. For nested options, be sure to write out the full
+YAML path, with a `.` separating each part.
+
+<Note>
+The complete auto-generated configuration reference is available in the BuildBuddy source repository. 
+These files are generated during the build process and contain all available configuration options with their default values.
+</Note>
+
+For example:
+
+```yaml config.yaml
+storage:
+  disk:
+    root_directory: /tmp/buildbuddy
+```
+
+becomes:
+
+```bash
+buildbuddy -storage.disk.root_directory="/tmp/buildbuddy"
+```
+
+For specifying lists of structures using flags on the command line, use the JSON
+representation of the list you wish to concatenate to the end or the element you
+wish to append:
+
+For example, given the following schema:
+
+```yaml config.yaml
+cache:
+  disk:
+    partitions: [] # type: []disk.Partition
+    # e.g.:
+    # - id: "" # type: string
+    #   max_size_bytes: 0 # type: int
+```
+
+We see that `cache.disk.partitions` is configured as a list of `disk.Partition`. In YAML, we'd normally configure it like this:
+
+```yaml config.yaml
+cache:
+  disk:
+    partitions:
+      - id: "1GB"
+        max_size_bytes: 1073741824
+      - id: "2GB"
+        max_size_bytes: 2147483648
+```
+
+The flag equivalent of this example would be:
+
+<CodeGroup>
+
+```bash Multiple Flags
+buildbuddy -cache.disk.partitions='{"id": "1GB", "max_size_bytes": 1073741824}' -cache.disk.partitions='{"id": "2GB", "max_size_bytes": 2147483648}'
+```
+
+```bash Single Flag
+buildbuddy -cache.disk.partitions='[{"id": "1GB", "max_size_bytes": 1073741824}, {"id": "2GB", "max_size_bytes": 2147483648}]'
+```
+
+</CodeGroup>
+
+## Configuration References
+
+The following configuration references are generated from the BuildBuddy source code:
+
+<CardGroup cols={3}>
+  <Card title="BuildBuddy Server (FOSS)" icon="server">
+    Complete configuration options for the open-source BuildBuddy server binary.
+    Available in: `bazel-bin/server/cmd/buildbuddy/yaml_doc/buildbuddy_server_documented_defaults.mdx`
+  </Card>
+  <Card title="BuildBuddy Server (Enterprise)" icon="building">
+    Enterprise server configuration including all FOSS options plus enterprise features.
+    Available in: `bazel-bin/enterprise/server/cmd/server/yaml_doc/buildbuddy_enterprise_server_documented_defaults.mdx`
+  </Card>
+  <Card title="BuildBuddy Executor" icon="cogs">
+    Executor configuration for remote build execution.
+    Available in: `bazel-bin/enterprise/server/cmd/executor/yaml_doc/buildbuddy_executor_documented_defaults.mdx`
+  </Card>
+</CardGroup>
+
+<Info>
+To generate these configuration files locally, build BuildBuddy from source:
+```bash
+bazel build //server/cmd/buildbuddy/yaml_doc:buildbuddy_server_documented_defaults
+bazel build //enterprise/server/cmd/server/yaml_doc:buildbuddy_enterprise_server_documented_defaults
+bazel build //enterprise/server/cmd/executor/yaml_doc:buildbuddy_executor_documented_defaults
+```
+</Info>
+
+For specific configuration sections, see:
+- [App Configuration](/config-app)
+- [Database Configuration](/config-database)
+- [Storage Configuration](/config-storage)
+- [Cache Configuration](/config-cache)
+- [RBE Configuration](/config-rbe)
+- [Auth Configuration](/config-auth)

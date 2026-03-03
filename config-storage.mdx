@@ -1,0 +1,141 @@
+---
+title: Storage Configuration
+sidebarTitle: Storage
+---
+
+The Storage section configures where and how BuildBuddy will store blob data.
+
+<Warning>
+This section is **required** for BuildBuddy to function.
+</Warning>
+
+## Configuration Options
+
+One of the following storage backend sections is **required**.
+
+### Disk Storage
+
+<ParamField path="disk" type="object">
+  The Disk section configures disk-based blob storage.
+  
+  <ParamField path="disk.root_directory" type="string" required>
+    The root directory to store all blobs in, if using disk based storage. This directory must be readable and writable by the BuildBuddy process. The directory will be created if it does not exist.
+  </ParamField>
+</ParamField>
+
+### Google Cloud Storage (GCS)
+
+<ParamField path="gcs" type="object">
+  The GCS section configures Google Cloud Storage based blob storage.
+  
+  <ParamField path="gcs.bucket" type="string" required>
+    The name of the GCS bucket to store files in. Will be created if it does not already exist.
+  </ParamField>
+  
+  <ParamField path="gcs.credentials_file" type="string" required>
+    A path to a [JSON credentials file](https://cloud.google.com/docs/authentication/getting-started) that will be used to authenticate to GCS.
+  </ParamField>
+  
+  <ParamField path="gcs.project_id" type="string" required>
+    The Google Cloud project ID of the project owning the above credentials and GCS bucket.
+  </ParamField>
+</ParamField>
+
+### AWS S3
+
+<ParamField path="aws_s3" type="object">
+  The AWS section configures AWS S3 storage.
+  
+  <ParamField path="aws_s3.region" type="string" required>
+    The AWS region
+  </ParamField>
+  
+  <ParamField path="aws_s3.bucket" type="string" required>
+    The AWS S3 bucket (will be created automatically)
+  </ParamField>
+  
+  <ParamField path="aws_s3.credentials_profile" type="string">
+    If a profile other than default is chosen, use that one.
+  </ParamField>
+  
+  <Note>
+    By default, the S3 blobstore will rely on environment variables, shared credentials, or IAM roles. See [AWS Go SDK docs](https://docs.aws.amazon.com/sdk-for-go/v1/developer-guide/configuring-sdk.html#specifying-credentials) for more information.
+  </Note>
+</ParamField>
+
+### Azure Storage
+
+<ParamField path="azure" type="object">
+  The Azure section configures Azure Storage.
+  
+  <ParamField path="azure.account_name" type="string" required>
+    The name of the Azure storage account
+  </ParamField>
+  
+  <ParamField path="azure.account_key" type="string" required>
+    The key for the Azure storage account
+  </ParamField>
+  
+  <ParamField path="azure.container_name" type="string" required>
+    The name of the Azure storage container.
+  </ParamField>
+</ParamField>
+
+### Optional Settings
+
+<ParamField path="chunk_file_size_bytes" type="integer">
+  How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.
+</ParamField>
+
+## Example Configurations
+
+<CodeGroup>
+
+```yaml Disk
+storage:
+  ttl_seconds: 86400 # One day in seconds.
+  chunk_file_size_bytes: 3000000 # 3 MB
+  disk:
+    root_directory: /tmp/buildbuddy
+```
+
+```yaml GCS
+storage:
+  ttl_seconds: 0 # No TTL.
+  chunk_file_size_bytes: 3000000 # 3 MB
+  gcs:
+    bucket: "buildbuddy_blobs"
+    project_id: "my-cool-project"
+    credentials_file: "enterprise/config/my-cool-project-7a9d15f66e69.json"
+```
+
+```yaml AWS S3
+storage:
+  aws_s3:
+    # required
+    region: "us-west-2"
+    bucket: "buildbuddy-bucket"
+    # optional
+    credentials_profile: "other-profile"
+```
+
+```yaml Minio
+storage:
+  aws_s3:
+    static_credentials_id: "YOUR_MINIO_ACCESS_KEY"
+    static_credentials_secret: "YOUR_MINIO_SECRET"
+    endpoint: "http://localhost:9000"
+    s3_force_path_style: true
+    region: "us-east-1"
+    bucket: "buildbuddy-storage-bucket"
+```
+
+```yaml Azure
+storage:
+  azure:
+    account_name: "mytestblobstore"
+    account_key: "XXXxxxXXXxXXXXxxXXXXXxXXXXXxX"
+    container_name: "my-container"
+```
+
+</CodeGroup>

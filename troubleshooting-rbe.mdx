@@ -1,0 +1,198 @@
+---
+title: Troubleshooting RBE Failures
+description: Diagnose and fix common remote build execution errors
+---
+
+This guide helps you troubleshoot common Remote Build Execution (RBE) failures and errors.
+
+## Connection and Timeout Errors
+
+<AccordionGroup>
+  <Accordion title="Remote connection/protocol failed with: execution failed">
+    This error is often a sign that a cache write is timing out. By default, bazel's `remote_timeout` [flag](https://bazel.build/reference/command-line-reference#build-flag--remote_timeout) limits all remote execution calls to 60 seconds.
+
+    ### Solution
+
+    We recommend using the following flag to increase this remote timeout:
+
+    ```bash
+    --remote_timeout=10m
+    ```
+
+    <Note>
+      These expensive writes should only happen once when artifacts are initially written to the cache, and shouldn't happen on subsequent builds.
+    </Note>
+  </Accordion>
+
+  <Accordion title="DEADLINE_EXCEEDED: deadline exceeded after 59999899500ns">
+    This error is a sign that a cache write is timing out. By default, bazel's `remote_timeout` [flag](https://bazel.build/reference/command-line-reference#build-flag--remote_timeout) limits all remote execution calls to 60 seconds.
+
+    ### Solution
+
+    We recommend using the following flag to increase this remote timeout:
+
+    ```bash
+    --remote_timeout=10m
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Platform and Executor Errors
+
+<AccordionGroup>
+  <Accordion title='exec user process caused "exec format error"'>
+    This error occurs when your build is configured for darwin (Mac OSX) CPUs, but attempting to run on Linux executors.
+
+    <Warning>
+      Mac executors are not included in BuildBuddy Cloud's free-tier offering.
+    </Warning>
+
+    If you'd like to add Mac executors to your BuildBuddy Cloud account, please [contact our sales team](/request-demo/).
+  </Accordion>
+
+  <Accordion title="rpc error: code = Unavailable desc = No registered executors">
+    This error occurs when your build is configured for darwin (Mac OSX) CPUs, but attempting to run on Linux executors.
+
+    <Warning>
+      Mac executors are not included in BuildBuddy Cloud's free-tier offering.
+    </Warning>
+
+    If you'd like to add Mac executors to your BuildBuddy Cloud account, please [contact our sales team](/request-demo/).
+  </Accordion>
+</AccordionGroup>
+
+## Network and Connectivity Issues
+
+<Accordion title="WARNING: Remote Cache: UNAVAILABLE: io exception">
+  This error may occur when Bazel fails to properly maintain a long-running TCP connection to BuildBuddy.
+
+  ### Diagnosis
+
+  <Steps>
+    <Step title="Enable gRPC logging">
+      Run Bazel with `--remote_grpc_log=grpc.log` to capture the gRPC traffic between Bazel and BuildBuddy.
+    </Step>
+    
+    <Step title="Convert log to JSON">
+      Download the [BuildBuddy CLI](/docs/cli) and run:
+      ```bash
+      bb print --grpc_log=<path-to-file>/grpc.log
+      ```
+    </Step>
+    
+    <Step title="Check for network errors">
+      In the log, you may see network errors such as:
+      ```js
+      "status": {
+        "code": 14,
+        "message": "io.netty.channel.unix.Errors$NativeIoException: readAddress(..) failed: Connection reset by peer"
+      }
+      ```
+    </Step>
+  </Steps>
+
+  ### Solution
+
+  This typically happens when there is a proxy or gateway (e.g. AWS NAT Gateway) in between Bazel and BuildBuddy that is terminating idle connections too quickly.
+
+  Try the following Linux network settings:
+
+  ```bash
+  # Lowered from default value: 7200
+  sudo sysctl -w net.ipv4.tcp_keepalive_time=180
+  # Lowered from default value: 75
+  sudo sysctl -w net.ipv4.tcp_keepalive_intvl=60
+  # Lowered from default value: 9
+  sudo sysctl -w net.ipv4.tcp_keepalive_probes=5
+  ```
+
+  <Info>
+    This will cause the Linux kernel to send keepalive probes earlier and more frequently, before the proxy/gateway in the middle detects and drops the idle connection.
+    
+    The optimal values may depend on specific network conditions, but try these values as a starting point. Please [contact us](/contact/) if you have any questions.
+  </Info>
+</Accordion>
+
+## Cache Issues
+
+<Accordion title="CacheNotFoundException: Missing digest">
+  During remote build execution, Bazel may encounter a `CacheNotFoundException` error with the message `Missing digest`.
+
+  ```bash
+  com.google.devtools.build.lib.remote.common.BulkTransferException: 3 errors during bulk transfer:
+      com.google.devtools.build.lib.remote.common.CacheNotFoundException: Missing digest: d0387e622e30ab61e39b1b91e54ea50f9915789dde7b950fafb0863db4a32ef8/17096
+      com.google.devtools.build.lib.remote.common.CacheNotFoundException: Missing digest: 9718647251c8d479142d459416079ff5cd9f45031a47aa346d8a6e719e374ffa/28630
+      com.google.devtools.build.lib.remote.common.CacheNotFoundException: Missing digest: 785e0ead607a37bd9a12179051e6efe53d7fb3eb05cc291e49ad6965ee2b613d/11504
+  ```
+
+  This error indicates that Bazel cannot find file(s) in the BuildBuddy Remote Cache that it expects to be present.
+
+  ### Diagnosis
+
+  <Steps>
+    <Step title="Copy the missing digest hash">
+      Copy the hash of the missing blob from the error message.
+    </Step>
+    
+    <Step title="Check cache requests">
+      Navigate to the Invocation URL → Cache → "Cache requests" and paste the hash into the Filter input.
+      
+      This will show whether Bazel has attempted to upload the blob to the BuildBuddy Remote Cache.
+    </Step>
+    
+    <Step title="Analyze the results">
+      - **If Bazel attempted to upload but failed**: You should see multiple retry attempts for the same blob
+      - **If there was no upload attempt**: This signifies a mismatch between Bazel's local state and the BuildBuddy Remote Cache
+    </Step>
+  </Steps>
+
+  ### Configuration Options
+
+  The number of retry attempts and the delay between retries can be configured:
+
+  - `--remote_retries` (default 5)
+  - `--remote_retry_max_delay` (default 5s)
+  - `--experimental_collect_system_network_usage` (default true since Bazel 8)
+
+  <Info>
+    The `--experimental_collect_system_network_usage` flag collects network usage data on the Bazel host machine. This network data will be displayed as a graph in the "Timing" tab of the Invocation page.
+  </Info>
+
+  ### Solution: Cache Lease Extension
+
+  The current workaround involves two parts:
+
+  **a. Maintain blob records**
+
+  Using the `--experimental_remote_cache_lease_extension` and `--experimental_remote_cache_ttl` flags, Bazel will maintain a record of all blobs involved in the latest invocation in a separate thread.
+
+  This thread will periodically "ping" the BuildBuddy Remote Cache, informing the server that these blobs are still in use by Bazel. The remote cache server will then update the last-used timestamps of these blobs accordingly.
+
+  **b. Automatic eviction retry**
+
+  With the `--experimental_remote_cache_eviction_retries` (default 5) flag, Bazel will detect this specific error code and attempt to reset the local state and retry the build.
+
+  This will clear Bazel's local state and re-analyze the repository to determine which blobs are missing and which actions need to be re-executed.
+
+  ### Manual Workaround
+
+  If neither of these flags work, try:
+
+  <Steps>
+    <Step title="Clean Bazel state">
+      Run `bazel clean --noasync` to manually clear the local state.
+    </Step>
+    
+    <Step title="Verify JVM shutdown">
+      Ensure that the Bazel JVM is shut down after the clean process completes (you can verify this through your process monitor).
+    </Step>
+    
+    <Step title="Rerun the build">
+      Rerun the build with the same flags as before.
+    </Step>
+  </Steps>
+
+  <Warning>
+    We recommend disabling the local Disk Cache with `--disk_cache=''` when troubleshooting this issue, as well as avoiding any remote cache proxy solutions. This will help isolate the root cause by eliminating potential interference from multiple cache sources.
+  </Warning>
+</Accordion>

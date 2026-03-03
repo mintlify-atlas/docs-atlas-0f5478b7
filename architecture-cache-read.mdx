@@ -1,0 +1,266 @@
+---
+title: Cache Read Architecture
+description: How BuildBuddy serves cached build artifacts and action results
+---
+
+This document describes the architecture and data flow when Bazel reads cached data from BuildBuddy's remote cache. Understanding this flow is essential for optimizing cache hit rates and troubleshooting cache performance issues.
+
+## Architecture Diagram
+
+![Cache Read Architecture](/architecture/architecture-cache-read.png)
+
+## Overview
+
+BuildBuddy implements the Remote Execution API's cache services, providing both Content Addressable Storage (CAS) for build artifacts and an Action Cache (AC) for build action results. When Bazel needs a cached artifact or wants to check if an action has been previously executed, it queries BuildBuddy's cache.
+
+## Components Involved
+
+### Bazel Build Tool
+
+The client requesting cached data:
+- Checks Action Cache before executing actions
+- Reads build artifacts from CAS
+- Uses content addressing (SHA256 digests) to identify artifacts
+- Falls back to execution on cache miss
+
+### Cache Service (API Server)
+
+Handles cache requests:
+- Receives gRPC requests for cache reads
+- Authenticates requests using API keys or mTLS
+- Validates digest formats and permissions
+- Routes requests to storage backends
+- Returns cached data or cache miss responses
+
+### Action Cache
+
+Maps action hashes to results:
+- Stores action digest → ActionResult mappings
+- ActionResult contains output file digests
+- Fast lookup using hash-based indexing
+- Implements TTL-based expiration
+
+### Content Addressable Storage (CAS)
+
+Stores actual artifact data:
+- Blobs identified by SHA256 content hash
+- Immutable data (never modified after write)
+- Automatic deduplication
+- Supports compression
+
+### Storage Backend
+
+Persists cached data:
+- Local disk cache for fast access
+- Cloud storage (S3, GCS, Azure) for scale
+- Multi-tier storage with promotion/demotion
+- Supports encryption at rest
+
+### Digest Validator
+
+Ensures request validity:
+- Validates digest format (hash/size)
+- Checks blob size limits
+- Verifies instance name permissions
+
+## Data Flow
+
+### Action Cache Read Flow
+
+#### Step 1: Action Hash Computation
+
+1. Bazel computes action hash from:
+   - Command line and arguments
+   - Input file digests
+   - Environment variables
+   - Platform properties
+2. Creates ActionDigest (hash + size)
+
+#### Step 2: GetActionResult Request
+
+1. Bazel sends GetActionResult gRPC request
+2. Request includes:
+   - Action digest
+   - Instance name (for cache isolation)
+3. Cache service authenticates request
+4. Validates digest format
+
+#### Step 3: Action Cache Lookup
+
+1. Service queries Action Cache with action digest
+2. Cache lookup paths:
+   - **Cache Hit**: ActionResult found
+   - **Cache Miss**: No entry exists
+3. For cache hit:
+   - ActionResult contains output file digests
+   - Exit code and execution metadata included
+
+#### Step 4: Response
+
+1. **On Hit**: Return ActionResult to Bazel
+2. **On Miss**: Return NOT_FOUND status
+3. Bazel proceeds accordingly:
+   - Hit: Skip execution, fetch outputs from CAS
+   - Miss: Execute action, upload results
+
+### CAS Read Flow
+
+#### Step 1: Digest Identification
+
+1. Bazel needs a file (input or cached output)
+2. Has the digest (SHA256 hash + size) from:
+   - Input manifest
+   - ActionResult output references
+   - Directory structure
+
+#### Step 2: Read Request
+
+Two APIs available:
+
+**BatchReadBlobs** (for small files):
+```protobuf
+message BatchReadBlobsRequest {
+  string instance_name = 1;
+  repeated Digest digests = 2;
+}
+```
+
+**ByteStream.Read** (for large files):
+```protobuf
+message ReadRequest {
+  string resource_name = 1;  // Format: {instance}/blobs/{hash}/{size}
+  int64 read_offset = 2;
+  int64 read_limit = 3;
+}
+```
+
+#### Step 3: Storage Lookup
+
+1. Service receives read request
+2. Validates digest and permissions
+3. Checks storage tiers in order:
+   - In-memory cache (hot data)
+   - Local disk cache
+   - Remote cloud storage
+4. Retrieves blob data
+
+#### Step 4: Data Transfer
+
+1. **Small blobs**: Returned in single response
+2. **Large blobs**: Streamed in chunks
+3. Compression applied if requested:
+   - Bazel requests compressed-blobs/zstd path
+   - Service returns compressed data
+   - Reduces network transfer time
+
+#### Step 5: Verification
+
+1. Bazel receives blob data
+2. Computes SHA256 of received data
+3. Verifies hash matches requested digest
+4. Uses data for build
+
+### FindMissingBlobs Flow
+
+Before downloading multiple blobs, Bazel can check which are already cached locally:
+
+1. Bazel sends FindMissingBlobs request with digest list
+2. Service checks which digests exist in cache
+3. Returns list of missing digests
+4. Bazel only downloads missing blobs
+5. Reduces unnecessary network transfer
+
+## Cache Hit Optimization
+
+### Local Disk Cache
+
+BuildBuddy maintains a local disk cache for frequently accessed blobs:
+
+1. **First access**: Retrieve from cloud storage
+2. **Cache promotion**: Store in local disk cache
+3. **Subsequent access**: Serve from local disk (much faster)
+4. **Eviction**: LRU policy when disk fills
+
+### In-Memory Cache
+
+Hot data cached in memory:
+- Recent ActionResults
+- Small frequently accessed blobs
+- Directory structures
+- Significantly faster than disk access
+
+### Compression
+
+Reduces network transfer time:
+- Zstd compression for large blobs
+- Bazel requests via compressed-blobs/zstd path
+- Typical compression ratio: 2-4x
+- CPU trade-off for network bandwidth savings
+
+### Cache Warming
+
+Pre-populate cache with common artifacts:
+- Base images and toolchains
+- Shared dependencies
+- Reduces initial cache misses
+
+## Performance Considerations
+
+### Latency Factors
+
+1. **Network RTT**: Distance to BuildBuddy server
+2. **Storage Backend**: Disk vs cloud storage speed
+3. **Blob Size**: Large files take longer to transfer
+4. **Compression**: CPU overhead vs bandwidth savings
+5. **Cache Tier**: Memory > disk > cloud storage
+
+### Optimization Strategies
+
+1. **Instance Name Isolation**: Separate caches for different use cases
+2. **Regional Deployment**: Deploy near build infrastructure
+3. **CDN Integration**: Use CDN for geographically distributed teams
+4. **Prefetching**: Download inputs proactively
+5. **Concurrent Reads**: Parallel blob downloads
+
+### Monitoring
+
+Key metrics to track:
+
+- Action Cache hit rate
+- CAS hit rate (by storage tier)
+- Blob download latency (p50, p95, p99)
+- Bytes transferred (network usage)
+- Storage backend errors
+- Cache miss reasons
+
+## Configuration Example
+
+```yaml
+cache:
+  max_size_bytes: 100GB
+  
+  # Local disk cache
+  disk_cache:
+    enabled: true
+    root_directory: /var/cache/buildbuddy
+    max_size_bytes: 50GB
+    
+  # In-memory cache
+  in_memory_cache:
+    enabled: true
+    max_size_bytes: 1GB
+    
+  # Cloud storage backend
+  storage:
+    gcs:
+      bucket: buildbuddy-cache
+      project_id: my-project
+      ttl_days: 30
+```
+
+## Related Topics
+
+- [Cache Write Architecture](/architecture-cache-write)
+- [Remote Execution Architecture](/architecture-remote-build)
+- [Data Storage Overview](/architecture-data-storage)
+- [Architecture Overview](/architecture-overview)

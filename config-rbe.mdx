@@ -1,0 +1,140 @@
+---
+title: RBE Configuration
+sidebarTitle: RBE
+---
+
+<Note>
+Remote Build Execution is only configurable in the [Enterprise version](/enterprise) of BuildBuddy.
+</Note>
+
+RBE configuration must be enabled in your `config.yaml` file, but most configuration is done via [toolchains](/rbe-setup), [platforms](/rbe-platforms), or the [enterprise Helm chart](/enterprise-helm).
+
+## Configuration Options
+
+<ParamField path="enable_remote_exec" type="boolean">
+  True if remote execution should be enabled.
+</ParamField>
+
+<ParamField path="default_pool_name" type="string">
+  The default executor pool to use if one is not specified.
+</ParamField>
+
+## Example Configuration
+
+```yaml config.yaml
+remote_execution:
+  enable_remote_exec: true
+```
+
+## Executor config
+
+BuildBuddy RBE executors take their own configuration file that is pulled from `/config.yaml` on the executor docker image. Using BuildBuddy's [Enterprise Helm chart](/enterprise-helm) will take care of most of this configuration for you.
+
+Here is an example:
+
+```yaml config.yaml
+executor:
+  app_target: "grpcs://your.buildbuddy.install:443"
+  root_directory: "/buildbuddy/remotebuilds/"
+  local_cache_directory: "/buildbuddy/filecache/"
+  local_cache_size_bytes: 5000000000 # 5GB
+  docker_socket: /var/run/docker.sock
+```
+
+### Container registry authentication
+
+By default, executors will respect the container registry configuration in
+`~/.docker/config.json`. The format of this file is described [here](https://docs.docker.com/engine/reference/commandline/login/).
+Any credential helpers configured there will be respected.
+
+For convenience, per-registry credentials can also be statically configured
+in the executor config YAML. These credentials will take priority over the
+configuration in `~/.docker/config.json`.
+
+Here is an example:
+
+```yaml config.yaml
+executor:
+  container_registries:
+    - hostnames:
+        - "my-private-registry.io"
+        - "subdomain.my-private-registry.io"
+      username: "registry-username"
+      password: "registry-password-or-long-lived-token"
+```
+
+This is especially useful for registries that allow using static tokens
+for authentication, which avoids the need to set up credential helpers.
+
+For example, Google Container Registry allows setting a username of
+"_json_key" and then passing the service account key directly:
+
+```yaml config.yaml
+executor:
+  container_registries:
+    - hostnames:
+        - "gcr.io"
+        - "marketplace.gcr.io"
+      username: "_json_key"
+      # Note: the YAML multiline string syntax ">" is used to embed the
+      # key JSON as a raw string. Be sure to indent as shown below:
+      password: >
+        {
+          "type": "service_account",
+          "project_id": my-project-id",
+          "private_key_id": "...",
+          "private_key": "...",
+          // More fields omitted
+          ...
+        }
+```
+
+## Executor environment variables
+
+In addition to the config.yaml, there are also environment variables that executors consume. To get more information about their environment. All of these are optional, but can be useful for more complex configurations.
+
+<ParamField path="SYS_MEMORY_BYTES" type="integer">
+  The amount of memory (in bytes) that this executor is allowed to consume. Defaults to free system memory.
+</ParamField>
+
+<ParamField path="SYS_CPU" type="string">
+  The amount of CPU that this executor is allowed to consume. Can be a core count such as `1.5` or a milli-CPU count such as `1500m`. Defaults to system CPU.
+</ParamField>
+
+<ParamField path="MY_NODENAME" type="string">
+  The name of the machine/node that the executor is running on. Defaults to empty string.
+</ParamField>
+
+<ParamField path="MY_HOSTNAME" type="string">
+  The hostname by which the app can communicate to this executor. Defaults to machine hostname.
+</ParamField>
+
+<ParamField path="MY_PORT" type="integer">
+  The port over which the app can communicate with this executor. Defaults to the executor's gRPC port.
+</ParamField>
+
+<ParamField path="MY_POOL" type="string">
+  The executor pool that this executor should be placed in. Defaults to empty string.
+</ParamField>
+
+Many of these environment variables are typically set based on Kubernetes FieldRefs like so:
+
+```yaml config.yaml
+env:
+  - name: SYS_MEMORY_BYTES
+    valueFrom:
+      resourceFieldRef:
+        resource: limits.memory
+  - name: SYS_MILLICPU
+    valueFrom:
+      resourceFieldRef:
+        resource: limits.cpu
+  - name: MY_HOSTNAME
+    valueFrom:
+      fieldRef:
+        fieldPath: status.podIP
+  - name: MY_NODENAME
+    valueFrom:
+      fieldRef:
+        fieldPath: spec.nodeName
+```

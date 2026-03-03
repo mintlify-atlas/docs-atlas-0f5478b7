@@ -1,0 +1,118 @@
+---
+title: Remote Runner Features
+description: Common features available for BuildBuddy Workflows and Remote Bazel including artifacts management
+---
+
+The following features are supported for both BuildBuddy Workflows and Remote Bazel.
+Check individual docs for more product-specific features.
+
+## Attaching artifacts to remote runs
+
+To provide easy access to artifacts generated during remote runs, BuildBuddy supports a special
+directory called the **artifacts directory**. If you write files
+to this directory, BuildBuddy will automatically upload those files and
+show them in the UI for the remote run. You can get the path to the
+artifacts directory using the environment variable
+`$BUILDBUDDY_ARTIFACTS_DIRECTORY`.
+
+### Usage example
+
+For example, Bazel supports several flags such as `--remote_grpc_log` that allow
+writing additional debug logs and metadata files associated with an
+invocation. To automatically upload these to our UI, you could run a command like:
+
+```bash
+bazel test //... --remote_grpc_log=$BUILDBUDDY_ARTIFACTS_DIRECTORY/grpc.log
+```
+
+BuildBuddy creates a new artifacts directory for each step executed on the remote
+runner, and recursively uploads all files in the directory after the step exits.
+
+### Common artifacts to upload
+
+<CardGroup cols={2}>
+  <Card title="Debug Logs" icon="bug">
+    Upload Bazel's gRPC logs, execution logs, or custom debug output for troubleshooting.
+  </Card>
+  <Card title="Test Reports" icon="file-chart-line">
+    Generate and upload test coverage reports, JUnit XML files, or custom test analytics.
+  </Card>
+  <Card title="Build Artifacts" icon="box">
+    Store compiled binaries, packages, or other build outputs for later download.
+  </Card>
+  <Card title="Performance Data" icon="gauge-high">
+    Upload profiling data, timing reports, or benchmark results.
+  </Card>
+</CardGroup>
+
+<Tip>
+The `$BUILDBUDDY_ARTIFACTS_DIRECTORY` environment variable is automatically set by BuildBuddy and points to a directory that's unique for each step in your workflow or remote bazel command.
+</Tip>
+
+## Fetching artifacts programmatically
+
+If you'd like to fetch artifacts generated during a remote run programmatically,
+you can either:
+
+<Tabs>
+  <Tab title="External Storage">
+    Upload the artifacts to a hosted storage site (like S3), where you can later fetch
+    the files using standard cloud storage APIs.
+
+    **Example:**
+    ```bash
+    # Upload to S3
+    aws s3 cp $BUILDBUDDY_ARTIFACTS_DIRECTORY/my-artifact.bin s3://my-bucket/artifacts/
+    ```
+  </Tab>
+
+  <Tab title="BuildBuddy API">
+    Upload the artifacts to BuildBuddy (using the artifacts directory approach described above)
+    and then fetch them using BuildBuddy's APIs.
+
+    <Steps>
+      <Step title="Get the invocation">
+        Use the [`GetInvocation` API](/enterprise-api#getinvocation)
+        with the `include_artifacts` field set to fetch the invocation for the remote run.
+
+        In the response, the `artifacts` field will include bytestream URLs for artifacts
+        that were uploaded to BuildBuddy.
+      </Step>
+
+      <Step title="Download artifacts">
+        Use the [`GetFile` API](/enterprise-api#getfile) to fetch the desired artifacts using the bytestream URLs from the previous step.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+<Note>
+Artifacts are subject to the same retention policies as other BuildBuddy cache data. Configure your cache retention settings in your organization settings.
+</Note>
+
+## Example: Uploading multiple artifacts
+
+Here's a complete example showing how to upload multiple types of artifacts:
+
+```yaml buildbuddy.yaml
+actions:
+  - name: "Build and test with artifacts"
+    triggers:
+      push:
+        branches:
+          - main
+    bazel_commands:
+      - test //...
+    after_commands:
+      - name: "Upload artifacts"
+        shell: |
+          # Copy test outputs
+          cp -r bazel-testlogs $BUILDBUDDY_ARTIFACTS_DIRECTORY/
+          
+          # Generate and upload coverage report
+          bazel coverage //... --combined_report=lcov
+          cp bazel-out/_coverage/_coverage_report.dat $BUILDBUDDY_ARTIFACTS_DIRECTORY/coverage.lcov
+          
+          # Upload custom build metadata
+          echo '{"build_time": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > $BUILDBUDDY_ARTIFACTS_DIRECTORY/metadata.json
+```

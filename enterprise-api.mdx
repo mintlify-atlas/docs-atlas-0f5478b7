@@ -1,0 +1,646 @@
+---
+title: Enterprise API
+description: Programmatically access BuildBuddy build information
+---
+
+The BuildBuddy API lets you programmatically obtain information about your Bazel builds. API access is available to Enterprise BuildBuddy customers.
+
+Requests can be made via JSON or using Protobuf. The examples below use the JSON API. For a full overview of the service, view the [service definition](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/service.proto) or the [individual protos](https://github.com/buildbuddy-io/buildbuddy/tree/master/proto/api/v1).
+
+## Authentication
+
+All API requests require authentication using the `x-buildbuddy-api-key` header:
+
+```bash
+curl -H 'x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY' \
+  https://app.buildbuddy.io/api/v1/GetInvocation
+```
+
+## GetInvocation
+
+Retrieves invocations associated with a commit SHA or invocation ID.
+
+### Endpoint
+
+```
+POST https://app.buildbuddy.io/api/v1/GetInvocation
+```
+
+### Request
+
+<ParamField path="selector" type="InvocationSelector" required>
+  The selector defining which invocation(s) to retrieve
+</ParamField>
+
+<ParamField path="selector.invocation_id" type="string">
+  Return only the invocation with this invocation ID
+</ParamField>
+
+<ParamField path="selector.commit_sha" type="string">
+  Return only invocations with this commit SHA
+</ParamField>
+
+<ParamField path="include_metadata" type="boolean" default="false">
+  If true, includes additional build metadata
+</ParamField>
+
+<ParamField path="include_artifacts" type="boolean" default="false">
+  If true, include artifacts attached to the invocation
+</ParamField>
+
+<ParamField path="include_child_invocations" type="boolean" default="false">
+  If true, include child invocations (if this invocation was a workflow)
+</ParamField>
+
+<ParamField path="page_token" type="string">
+  The next_page_token value returned from a previous request
+</ParamField>
+
+### Response
+
+<ResponseField name="invocation" type="Invocation[]">
+  Invocations matching the request, possibly capped by a server limit
+</ResponseField>
+
+<ResponseField name="next_page_token" type="string">
+  Token to retrieve the next page of results, or empty if there are no more results
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+```bash cURL
+curl -d '{"selector": {"invocation_id":"c6b2b6de-c7bb-4dd9-b7fd-a530362f0845"}}' \
+  -H 'x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY' \
+  -H 'Content-Type: application/json' \
+  https://app.buildbuddy.io/api/v1/GetInvocation
+```
+
+```json Response
+{
+  "invocation": [
+    {
+      "id": {
+        "invocationId": "c7fbfe97-8298-451f-b91d-722ad91632ea"
+      },
+      "success": true,
+      "user": "runner",
+      "durationUsec": "221970000",
+      "host": "fv-az278-49",
+      "command": "build",
+      "pattern": "//...",
+      "actionCount": "1402",
+      "createdAtUsec": "1623193638545989",
+      "updatedAtUsec": "1623193638545989",
+      "repoUrl": "https://github.com/buildbuddy-io/buildbuddy",
+      "commitSha": "800f549937a4c0a1614e65501caf7577d2a00624",
+      "role": "CI"
+    }
+  ]
+}
+```
+</CodeGroup>
+
+## GetLog
+
+Retrieves build logs associated with an invocation ID.
+
+### Endpoint
+
+```
+POST https://app.buildbuddy.io/api/v1/GetLog
+```
+
+### Request
+
+<ParamField path="selector" type="LogSelector" required>
+  The selector defining which log(s) to retrieve
+</ParamField>
+
+<ParamField path="selector.invocation_id" type="string" required>
+  Return only logs associated with this invocation ID
+</ParamField>
+
+<ParamField path="page_token" type="string">
+  The next_page_token value returned from a previous request
+</ParamField>
+
+### Response
+
+<ResponseField name="log" type="Log">
+  Log matching the request, possibly capped by a server limit
+  
+  <ResponseField name="log.id.invocation_id" type="string">
+    The invocation ID
+  </ResponseField>
+  
+  <ResponseField name="log.contents" type="string">
+    The contents of the log
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="next_page_token" type="string">
+  Token to retrieve the next page of the log, or empty if there are no more logs
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+```bash cURL
+curl -d '{"selector": {"invocation_id":"c6b2b6de-c7bb-4dd9-b7fd-a530362f0845"}}' \
+  -H 'x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY' \
+  -H 'Content-Type: application/json' \
+  https://app.buildbuddy.io/api/v1/GetLog
+```
+
+```json Response
+{
+  "log": {
+    "contents": "INFO: Streaming build results to: https://app.buildbuddy.io/invocation/c6b2b6de...\nINFO: Analyzed 9 targets (52 packages loaded, 1700 targets configured).\nINFO: Found 9 targets...\nINFO: Elapsed time: 2.615s, Critical Path: 1.21s\nINFO: Build completed successfully, 32 total actions\n"
+  }
+}
+```
+</CodeGroup>
+
+## GetTarget
+
+Retrieves targets associated with a given invocation ID.
+
+### Endpoint
+
+```
+POST https://app.buildbuddy.io/api/v1/GetTarget
+```
+
+### Request
+
+<ParamField path="selector" type="TargetSelector" required>
+  The selector defining which target(s) to retrieve
+</ParamField>
+
+<ParamField path="selector.invocation_id" type="string" required>
+  All targets returned will be scoped to this invocation
+</ParamField>
+
+<ParamField path="selector.target_id" type="string">
+  If set, only the target with this target ID will be returned
+</ParamField>
+
+<ParamField path="selector.tag" type="string">
+  If set, only targets with this tag will be returned
+</ParamField>
+
+<ParamField path="selector.label" type="string">
+  If set, only the target with this target label will be returned
+</ParamField>
+
+<ParamField path="page_token" type="string">
+  The next_page_token value returned from a previous request
+</ParamField>
+
+### Response
+
+<ResponseField name="target" type="Target[]">
+  Targets matching the request invocation, possibly capped by a server limit
+  
+  <ResponseField name="target[].id" type="object">
+    The resource ID components
+    
+    <ResponseField name="invocation_id" type="string">
+      The invocation ID
+    </ResponseField>
+    
+    <ResponseField name="target_id" type="string">
+      The target ID
+    </ResponseField>
+  </ResponseField>
+  
+  <ResponseField name="target[].label" type="string">
+    The label of the target (e.g., `//server/test:foo`)
+  </ResponseField>
+  
+  <ResponseField name="target[].status" type="Status">
+    The aggregate status of the target
+  </ResponseField>
+  
+  <ResponseField name="target[].rule_type" type="string">
+    The type of the target rule (e.g., `go_library`, `java_binary`)
+  </ResponseField>
+  
+  <ResponseField name="target[].language" type="string">
+    The language of the target rule (e.g., `go`, `java`, `sh`)
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="next_page_token" type="string">
+  Token to retrieve the next page of results
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+```bash cURL
+curl -d '{"selector": {"invocation_id":"c6b2b6de-c7bb-4dd9-b7fd-a530362f0845"}}' \
+  -H 'x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY' \
+  -H 'Content-Type: application/json' \
+  https://app.buildbuddy.io/api/v1/GetTarget
+```
+
+```json Response
+{
+  "target": [
+    {
+      "id": {
+        "invocationId": "c7fbfe97-8298-451f-b91d-722ad91632ea",
+        "targetId": "aWQ6OnYxOjovL3Rvb2xzL3JlcGxheV9hY3Rpb246cmVwbGF5X2FjdGlvbl9saWI"
+      },
+      "label": "//tools/replay_action:replay_action_lib",
+      "status": "BUILT",
+      "ruleType": "go_library",
+      "language": "go"
+    }
+  ]
+}
+```
+</CodeGroup>
+
+## GetAction
+
+Retrieves actions associated with a given target or invocation.
+
+### Endpoint
+
+```
+POST https://app.buildbuddy.io/api/v1/GetAction
+```
+
+### Request
+
+<ParamField path="selector" type="ActionSelector" required>
+  The selector defining which action(s) to retrieve
+</ParamField>
+
+<ParamField path="selector.invocation_id" type="string" required>
+  All actions returned will be scoped to this invocation
+</ParamField>
+
+<ParamField path="selector.target_id" type="string">
+  If set, all actions returned will be scoped to this target
+</ParamField>
+
+<ParamField path="selector.configuration_id" type="string">
+  If set, all actions returned will be scoped to this configuration
+</ParamField>
+
+<ParamField path="selector.action_id" type="string">
+  If set, only the action with this action ID will be returned
+</ParamField>
+
+<ParamField path="selector.target_label" type="string">
+  If set, only the action with this target label will be returned
+</ParamField>
+
+<ParamField path="page_token" type="string">
+  The next_page_token value returned from a previous request
+</ParamField>
+
+### Response
+
+<ResponseField name="action" type="Action[]">
+  Actions matching the request, possibly capped by a server limit
+  
+  <ResponseField name="action[].id" type="object">
+    The resource ID components that identify the action
+  </ResponseField>
+  
+  <ResponseField name="action[].file" type="File[]">
+    A list of file references for action level files
+  </ResponseField>
+  
+  <ResponseField name="action[].target_label" type="string">
+    The label of the target that generated this action
+  </ResponseField>
+  
+  <ResponseField name="action[].shard" type="int64">
+    The test shard this action represents (only for test actions)
+  </ResponseField>
+  
+  <ResponseField name="action[].run" type="int64">
+    The test run this action represents (only for test actions)
+  </ResponseField>
+  
+  <ResponseField name="action[].attempt" type="int64">
+    The test attempt this action represents (only for test actions)
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="next_page_token" type="string">
+  Token to retrieve the next page of results
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+```bash cURL
+curl -d '{"selector": {"invocation_id":"c6b2b6de-c7bb-4dd9-b7fd-a530362f0845"}}' \
+  -H 'x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY' \
+  -H 'Content-Type: application/json' \
+  https://app.buildbuddy.io/api/v1/GetAction
+```
+
+```json Response
+{
+  "action": [
+    {
+      "id": {
+        "invocationId": "c6b2b6de-c7bb-4dd9-b7fd-a530362f0845",
+        "targetId": "aWQ6OnYxOjovLzpzdGF0aWM",
+        "configurationId": "00e90e1ab7325d5e63d03bfe5f808477b2bb66ca6ae9af26c036cae67ee81cf9",
+        "actionId": "aWQ6OnYxOjpidWlsZA"
+      },
+      "file": [
+        {
+          "name": "test.log",
+          "uri": "bytestream://remote.buildbuddy.io/buildbuddy-io/buildbuddy/ci/blobs/...",
+          "hash": "09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888",
+          "sizeBytes": 216
+        }
+      ]
+    }
+  ]
+}
+```
+</CodeGroup>
+
+## GetFile
+
+Retrieves files associated with a given URI.
+
+### Endpoint
+
+```
+POST https://app.buildbuddy.io/api/v1/GetFile
+```
+
+### Request
+
+<ParamField path="uri" type="string" required>
+  File URI corresponding to the `uri` field in the File message
+  
+  If the BuildBuddy instance supports ZSTD transcoding, the literal string `/blobs/` in the URI (third-to-last path segment) may be replaced with `/compressed-blobs/zstd/`, and the server will return a compressed payload.
+  
+  Examples:
+  - Uncompressed blob with remote instance name of "ci":
+    `bytestream://remote.buildbuddy.io/ci/blobs/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216`
+  - zstd-compressed blob with no remote instance name:
+    `bytestream://remote.buildbuddy.io/compressed-blobs/zstd/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216`
+</ParamField>
+
+### Response
+
+<ResponseField name="data" type="bytes">
+  The file data
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+```bash cURL
+curl -d '{"uri":"bytestream://remote.buildbuddy.io/buildbuddy-io/buildbuddy/ci/blobs/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216"}' \
+  -H 'x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY' \
+  -H 'Content-Type: application/json' \
+  https://app.buildbuddy.io/api/v1/GetFile
+```
+</CodeGroup>
+
+## DeleteFile
+
+Deletes a specific cache entry associated with a URI. This can be used to address cache poisoning.
+
+### Endpoint
+
+```
+POST https://app.buildbuddy.io/api/v1/DeleteFile
+```
+
+### Request
+
+<ParamField path="uri" type="string" required>
+  URI of file to delete
+  
+  **CAS URI format:**
+  `<instance_name>/<blobs|compressed-blobs/zstd>/<digest_hash>/<digest_size>`
+  
+  **Action cache URI format:**
+  `<instance_name>/<blobs|compressed-blobs/zstd>/ac/<digest_hash>/<digest_size>`
+  
+  Examples:
+  - CAS artifact: `compressed-blobs/zstd/aaaa.../2084`
+  - CAS artifact with remote_instance_name: `my_instance/blobs/aaaa.../2084`
+  - Action cache artifact: `blobs/ac/aaaa.../2084`
+  - Action cache artifact with remote_instance_name: `my_instance/blobs/ac/aaaa.../2084`
+</ParamField>
+
+### Response
+
+Empty response on success.
+
+### Example
+
+<CodeGroup>
+```bash cURL
+curl -d '{"uri":"bytestream://remote.buildbuddy.io/buildbuddy-io/buildbuddy/ci/blobs/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216"}' \
+  -H 'x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY' \
+  -H 'Content-Type: application/json' \
+  https://app.buildbuddy.io/api/v1/DeleteFile
+```
+</CodeGroup>
+
+## ExecuteWorkflow
+
+Triggers a BuildBuddy Workflow for the given repository and branch/commit.
+
+<Note>
+GitHub App authentication is required. The API does not support running legacy workflows. See the [Workflows setup guide](/workflows-setup) for more information.
+</Note>
+
+### Endpoint
+
+```
+POST https://app.buildbuddy.io/api/v1/ExecuteWorkflow
+```
+
+### Request
+
+<ParamField path="repo_url" type="string" required>
+  URL of the repo the workflow is running for (e.g., `https://github.com/some-user/acme`)
+</ParamField>
+
+<ParamField path="branch" type="string">
+  Git branch at which the workflow should be run. At least one of `branch` or `commit_sha` must be set
+</ParamField>
+
+<ParamField path="commit_sha" type="string">
+  Git commit SHA at which the workflow should be run. At least one of `branch` or `commit_sha` must be set
+</ParamField>
+
+<ParamField path="action_names" type="string[]">
+  Names of the workflow actions to execute. Correspond to actions in buildbuddy.yaml. If not set, will execute all actions in the workflow config
+</ParamField>
+
+<ParamField path="visibility" type="string" default="PRIVATE">
+  VISIBILITY build metadata used for the workflow invocation. Can be set to "PUBLIC" to make the workflow invocation public
+</ParamField>
+
+<ParamField path="async" type="boolean" default="false">
+  If true, start the workflow but do not wait for the status to be returned
+</ParamField>
+
+<ParamField path="env" type="map<string, string>">
+  Environment variables to apply to each action. These overrides take precedence over env vars in buildbuddy.yaml
+</ParamField>
+
+<ParamField path="disable_retry" type="boolean" default="false">
+  If true, disable automatic retry of transient errors (for non-idempotent workloads)
+</ParamField>
+
+### Response
+
+<ResponseField name="action_statuses" type="ActionStatus[]">
+  A list of the actions executed by the API, or actions started if async is true
+  
+  <ResponseField name="action_statuses[].action_name" type="string">
+    The name of the action from buildbuddy.yaml
+  </ResponseField>
+  
+  <ResponseField name="action_statuses[].invocation_id" type="string">
+    The BuildBuddy invocation ID from executing the action
+  </ResponseField>
+  
+  <ResponseField name="action_statuses[].status" type="google.rpc.Status">
+    The gRPC status from executing the action, or from starting the action if async is true
+  </ResponseField>
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+```bash cURL
+curl -d '{
+  "repo_url": "https://github.com/buildbuddy-io/buildbuddy-ci-playground",
+  "branch": "cool-feature",
+  "commit_sha": "abc123",
+  "action_names": ["Test"],
+  "env": {"USE_BAZEL_VERSION": "6.4.0"}
+}' \
+-H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
+-H 'Content-Type: application/json' \
+https://app.buildbuddy.io/api/v1/ExecuteWorkflow
+```
+
+```bash GitHub Actions
+curl -d '{
+  "repo_url": "https://github.com/buildbuddy-io/buildbuddy-ci-playground",
+  "branch": "${{ github.ref_name }}",
+  "commit_sha": "${{ github.sha }}",
+  "action_names": ["Test"]
+}' \
+-H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
+-H 'Content-Type: application/json' \
+https://app.buildbuddy.io/api/v1/ExecuteWorkflow
+```
+</CodeGroup>
+
+## Run
+
+Runs a command on a remote runner hosted on a remote executor.
+
+### Endpoint
+
+```
+POST https://app.buildbuddy.io/api/v1/Run
+```
+
+### Request
+
+<ParamField path="repo" type="string">
+  URL of the repo the remote workspace should be initialized for (e.g., `https://github.com/some-user/acme`). If not provided, commands will run in an empty directory
+</ParamField>
+
+<ParamField path="branch" type="string">
+  Git branch to configure the remote git workspace. At least one of `branch` or `commit_sha` must be set when `repo` is provided
+</ParamField>
+
+<ParamField path="commit_sha" type="string">
+  Git commit SHA to configure the remote git workspace. At least one of `branch` or `commit_sha` must be set when `repo` is provided
+</ParamField>
+
+<ParamField path="patches" type="bytes[]">
+  Local patches that should be applied to the repo before running the command. Patches will be applied using `git apply` in the root directory. In JSON requests, specify as a list of base64-encoded strings
+</ParamField>
+
+<ParamField path="steps" type="Step[]" required>
+  Bash commands to run, in order. If a step fails, subsequent steps are not run
+  
+  Example: `[{"run": "bazel build :server"}, {"run": "echo 'Hello World'"}]`
+</ParamField>
+
+<ParamField path="env" type="map<string, string>">
+  Environment variables to set in the runner env
+</ParamField>
+
+<ParamField path="platform_properties" type="map<string, string>">
+  Platform properties to apply to the runner (e.g., `{"OSFamily":"linux", "Arch":"amd64"}`)
+</ParamField>
+
+<ParamField path="remote_headers" type="string[]">
+  Remote headers to be applied to the execution request. Can be used to set platform properties containing secrets
+  
+  Example: `["x-buildbuddy-platform.env-overrides=SECRET_NAME=SECRET_VALUE"]`
+</ParamField>
+
+<ParamField path="timeout" type="string">
+  Max time before run should be canceled (e.g., "15s", "2h")
+</ParamField>
+
+<ParamField path="wait_until" type="WaitCondition" default="STARTED">
+  Specifies what to wait until before returning a RunResponse. Options: `QUEUED`, `STARTED`, `COMPLETED`
+</ParamField>
+
+<ParamField path="use_system_git_credentials" type="boolean" default="false">
+  Whether to use GitHub credentials configured on the executor. Only supported for bare runners
+</ParamField>
+
+<ParamField path="skip_auto_checkout" type="boolean" default="false">
+  Whether to skip the automatic GitHub setup steps on the remote runner
+</ParamField>
+
+### Response
+
+<ResponseField name="invocation_id" type="string">
+  The invocation ID of the remote run
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+```bash With Git Repo
+curl -d '{
+  "repo": "git@github.com:buildbuddy-io/buildbuddy.git",
+  "branch": "main",
+  "steps": [{"run": "bazel test //..."}]
+}' \
+-H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
+-H 'Content-Type: application/json' \
+https://app.buildbuddy.io/api/v1/Run
+```
+
+```bash Without Git Repo
+curl -d '{
+  "steps": [{"run": "echo hello world"}]
+}' \
+-H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
+-H 'Content-Type: application/json' \
+https://app.buildbuddy.io/api/v1/Run
+```
+</CodeGroup>

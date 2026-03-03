@@ -1,0 +1,233 @@
+---
+title: Build Event Write Architecture
+description: How BuildBuddy ingests and processes build events from Bazel
+---
+
+This document describes the architecture and data flow when BuildBuddy receives and processes build events from Bazel and other build tools. Understanding this flow is essential for troubleshooting build event upload issues and optimizing ingestion performance.
+
+## Architecture Diagram
+
+![Build Event Write Architecture](/architecture/architecture-build-event-write.png)
+
+## Overview
+
+BuildBuddy implements the Build Event Protocol (BEP) to receive streaming build events from Bazel. These events contain information about build progress, targets, actions, test results, and more. The system is designed to handle high-throughput event streams while maintaining data consistency.
+
+## Components Involved
+
+### Bazel Build Tool
+
+The source of build events:
+- Generates build events during build execution
+- Streams events via gRPC to BuildBuddy
+- Includes build metadata, target info, and artifacts
+- Sends final BuildFinished event on completion
+
+### Build Event Protocol Service
+
+Handles incoming event streams:
+- Receives gRPC stream of build events
+- Validates event format and authentication
+- Maintains stream state and ordering
+- Returns acknowledgments to Bazel
+
+### Event Handler
+
+Processes individual events:
+- Parses event proto messages
+- Extracts metadata and references
+- Routes to appropriate storage services
+- Handles different event types (target, test, artifact, etc.)
+
+### Invocation Service
+
+Manages invocation lifecycle:
+- Creates new invocation records
+- Updates invocation status as events arrive
+- Tracks progress and completion
+- Computes aggregate metrics (duration, cache hit rate)
+
+### Database Writer
+
+Persists structured data:
+- Writes invocation metadata
+- Stores target and action records
+- Indexes test results
+- Maintains relational integrity
+
+### Artifact Storage
+
+Handles large binary data:
+- Receives uploaded build logs
+- Stores test outputs and artifacts
+- Implements deduplication via content addressing
+- Supports compression and encryption
+
+### Webhook Service
+
+Notifies external systems:
+- Triggers on invocation completion
+- Sends notifications to configured endpoints
+- Includes build status and metrics
+- Supports retry and failure handling
+
+## Data Flow
+
+### Step 1: Stream Initialization
+
+1. Bazel initiates gRPC connection to BuildBuddy BEP service
+2. Sends initial metadata (API key, project ID)
+3. BuildBuddy authenticates and creates invocation record
+4. Returns stream acknowledgment to Bazel
+5. Invocation status set to "IN_PROGRESS"
+
+### Step 2: Event Streaming
+
+1. Bazel sends build events as they occur
+2. Events arrive in partial ordering (not strictly sequential)
+3. BuildBuddy buffers events and maintains state
+4. Each event is acknowledged after processing
+5. Events are processed in parallel where possible
+
+### Step 3: Event Processing
+
+For each event:
+
+1. **Validation**: Check event format and required fields
+2. **Parsing**: Extract metadata and references
+3. **Type Handling**: Route to specialized handlers:
+   - BuildStarted: Initialize invocation
+   - TargetConfigured/Completed: Store target info
+   - ActionExecuted: Record action details
+   - TestResult: Store test outcomes
+   - BuildFinished: Finalize invocation
+4. **Storage**: Persist data to database and blob storage
+5. **Acknowledgment**: Send response to Bazel
+
+### Step 4: Artifact Upload
+
+For events with file references:
+
+1. Event contains URI or inline data
+2. Large files uploaded separately via ByteStream API
+3. Content addressing ensures deduplication
+4. File metadata stored with action/test records
+5. Compression applied for storage optimization
+
+### Step 5: Invocation Finalization
+
+1. Bazel sends BuildFinished event
+2. BuildBuddy computes final metrics:
+   - Total duration
+   - Cache hit rate
+   - Success/failure status
+   - Action count and timing
+3. Updates invocation status to "COMPLETE"
+4. Triggers webhooks and notifications
+5. Closes gRPC stream
+
+### Step 6: Post-Processing
+
+1. Generate summary statistics
+2. Update organizational metrics
+3. Trigger analysis pipelines (flaky test detection, etc.)
+4. Send completion notifications
+
+## Event Types
+
+BuildBuddy handles various event types:
+
+### Core Events
+- **BuildStarted**: Initialization and configuration
+- **BuildFinished**: Final status and metrics
+- **Progress**: Periodic status updates
+
+### Target Events
+- **TargetConfigured**: Target configuration details
+- **TargetComplete**: Target build completion
+- **TargetSummary**: Aggregate target information
+
+### Action Events
+- **ActionExecuted**: Individual action execution details
+- **CommandLine**: Build command information
+- **OptionsParsed**: Build options and flags
+
+### Test Events
+- **TestResult**: Test execution outcome
+- **TestSummary**: Aggregate test results
+
+### Artifact Events
+- **NamedSetOfFiles**: File groups and references
+- **BuildToolLogs**: Build tool output
+- **OutputFile**: Individual output file references
+
+## Reliability Features
+
+### Stream Resilience
+
+1. **Reconnection**: Support for stream reconnection on network issues
+2. **Event Deduplication**: Handle duplicate events gracefully
+3. **Out-of-Order Events**: Buffer and reorder events when needed
+4. **Partial Streams**: Mark invocations as incomplete on stream failure
+
+### Data Consistency
+
+1. **Transactional Writes**: Use database transactions for related data
+2. **Idempotent Processing**: Safe to reprocess events
+3. **Referential Integrity**: Maintain relationships between records
+
+### Error Handling
+
+1. **Validation Errors**: Log and skip malformed events
+2. **Storage Failures**: Retry with exponential backoff
+3. **Stream Errors**: Return appropriate gRPC status codes
+
+## Performance Optimizations
+
+### Batching
+
+- Group database writes for efficiency
+- Batch artifact uploads
+- Aggregate metrics computation
+
+### Parallelization
+
+- Process independent events concurrently
+- Parallel database inserts for different tables
+- Asynchronous artifact storage
+
+### Buffering
+
+- Event buffers reduce database write frequency
+- Stream buffers handle network latency
+- Write-through caches for frequently accessed data
+
+## Configuration
+
+Key settings for build event ingestion:
+
+```yaml
+build_event_protocol:
+  enable_build_event_proxy: true
+  max_invocation_events: 100000
+  buffer_size: 1000
+  database_write_batch_size: 100
+  artifact_upload_timeout: 300s
+```
+
+## Monitoring
+
+Key metrics to monitor:
+
+- Event ingestion rate (events/second)
+- Stream duration (time to process stream)
+- Database write latency
+- Artifact upload duration
+- Stream failure rate
+- Event processing errors
+
+## Related Topics
+
+- [Build Event Read Architecture](/architecture-build-event-read)
+- [Cache Write Architecture](/architecture-cache-write)
+- [Architecture Overview](/architecture-overview)

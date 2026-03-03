@@ -1,0 +1,371 @@
+---
+title: Cache Write Architecture
+description: How BuildBuddy stores build artifacts and action results in the cache
+---
+
+This document describes the architecture and data flow when Bazel writes build artifacts and action results to BuildBuddy's remote cache. Understanding this flow is essential for optimizing cache upload performance and troubleshooting cache write issues.
+
+## Architecture Diagram
+
+![Cache Write Architecture](/architecture/architecture-cache-write.png)
+
+## Overview
+
+After Bazel executes a build action, it uploads the outputs and action results to BuildBuddy's remote cache so that future builds can reuse these results. BuildBuddy implements the Remote Execution API's cache write operations, supporting both Content Addressable Storage (CAS) writes and Action Cache updates.
+
+## Components Involved
+
+### Bazel Build Tool
+
+The client uploading cached data:
+- Executes build actions
+- Computes output file digests (SHA256)
+- Uploads outputs to CAS
+- Stores ActionResult in Action Cache
+- Handles upload retries on failure
+
+### Cache Service (API Server)
+
+Handles cache write requests:
+- Receives gRPC requests for cache writes
+- Authenticates and authorizes requests
+- Validates digest formats and sizes
+- Routes to storage backends
+- Returns success/failure status
+
+### Digest Computer
+
+Computes content hashes:
+- SHA256 hash of file contents
+- Includes file size in digest
+- Used for content addressing
+- Ensures data integrity
+
+### Content Addressable Storage (CAS)
+
+Stores artifact blobs:
+- Files identified by content hash
+- Immutable storage (write-once)
+- Automatic deduplication
+- Supports compression
+
+### Action Cache
+
+Stores action results:
+- Maps action digest → ActionResult
+- ActionResult contains output digests and metadata
+- Mutable (can be overwritten)
+- Implements TTL expiration
+
+### Storage Backend
+
+Persists data to disk or cloud:
+- Local disk storage
+- Cloud object storage (S3, GCS, Azure Blob)
+- Supports multi-region replication
+- Handles large file uploads
+
+### Upload Coordinator
+
+Manages concurrent uploads:
+- Batches small files
+- Parallelizes large uploads
+- Implements retry logic
+- Tracks upload progress
+
+## Data Flow
+
+### CAS Write Flow
+
+#### Step 1: Action Execution
+
+1. Bazel executes build action locally or remotely
+2. Action produces output files
+3. Bazel computes digest for each output:
+   - Read file contents
+   - Compute SHA256 hash
+   - Get file size
+   - Create Digest (hash + size)
+
+#### Step 2: Check Missing Blobs
+
+1. Before uploading, Bazel calls FindMissingBlobs
+2. Sends list of output digests to BuildBuddy
+3. BuildBuddy checks which digests are already in cache
+4. Returns list of missing digests
+5. Bazel only uploads missing blobs (saves bandwidth)
+
+#### Step 3: Blob Upload
+
+Two upload APIs available:
+
+**BatchUpdateBlobs** (for small files < 2MB):
+
+```protobuf
+message BatchUpdateBlobsRequest {
+  string instance_name = 1;
+  repeated Request requests = 2;
+  
+  message Request {
+    Digest digest = 1;
+    bytes data = 2;
+  }
+}
+```
+
+Process:
+1. Multiple small files in single request
+2. All blobs committed atomically
+3. Fast for many small files
+
+**ByteStream.Write** (for large files):
+
+```protobuf
+message WriteRequest {
+  string resource_name = 1;  // Format: {instance}/uploads/{uuid}/blobs/{hash}/{size}
+  int64 write_offset = 2;
+  bytes data = 3;
+  bool finish_write = 4;
+}
+```
+
+Process:
+1. Stream file data in chunks
+2. Support resumable uploads
+3. Handle large files efficiently
+4. Final chunk sets finish_write=true
+
+#### Step 4: Storage Write
+
+1. Cache service receives blob data
+2. Validates digest (recompute hash, verify size)
+3. Checks if blob already exists (deduplication)
+4. If new:
+   - Writes to storage backend
+   - Stores in multiple tiers (disk, cloud)
+   - Applies compression if configured
+5. Returns success response
+
+#### Step 5: Write Verification
+
+1. Storage backend confirms write success
+2. Digest indexed for future reads
+3. Bazel receives success response
+4. Proceeds to update Action Cache
+
+### Action Cache Write Flow
+
+#### Step 1: Create ActionResult
+
+After outputs are uploaded to CAS:
+
+1. Bazel creates ActionResult message:
+   ```protobuf
+   message ActionResult {
+     repeated OutputFile output_files = 2;
+     repeated OutputDirectory output_directories = 3;
+     int32 exit_code = 4;
+     bytes stdout_digest = 5;
+     bytes stderr_digest = 6;
+     ExecutionMetadata execution_metadata = 9;
+   }
+   ```
+
+2. Includes:
+   - Output file paths and digests
+   - Exit code
+   - Stdout/stderr digests
+   - Execution timing metadata
+
+#### Step 2: UpdateActionResult Request
+
+1. Bazel sends UpdateActionResult gRPC request
+2. Request includes:
+   - Action digest (identifies the action)
+   - ActionResult (output information)
+   - Instance name
+3. Cache service authenticates request
+
+#### Step 3: Action Cache Update
+
+1. Service stores action digest → ActionResult mapping
+2. Overwrites previous entry if exists
+3. Sets TTL for expiration
+4. Indexes for fast lookup
+5. Returns success response
+
+#### Step 4: Cache Entry Ready
+
+1. Action is now cached
+2. Future builds with same action digest:
+   - Will get cache hit
+   - Can skip execution
+   - Will download outputs from CAS
+
+## Upload Optimization
+
+### Deduplication
+
+Content addressing provides automatic deduplication:
+
+1. Same file content = same digest
+2. FindMissingBlobs avoids re-uploading existing blobs
+3. Significant bandwidth savings for:
+   - Shared dependencies
+   - Incremental builds
+   - Multiple build configurations
+
+### Batching
+
+Small files batched together:
+
+1. Reduces gRPC call overhead
+2. BatchUpdateBlobs handles up to hundreds of small files
+3. Single round-trip for multiple blobs
+4. Improves throughput for builds with many small outputs
+
+### Compression
+
+Compress before upload:
+
+1. Zstd compression for large text files
+2. Upload to compressed-blobs/zstd path
+3. Reduces upload time
+4. Stored compressed (decompressed on read)
+5. Typical compression ratio: 2-4x
+
+### Parallel Uploads
+
+Multiple concurrent uploads:
+
+1. Bazel uploads blobs in parallel
+2. Configurable concurrency limit
+3. Maximizes network bandwidth utilization
+4. Especially beneficial for large builds
+
+### Incremental Uploads
+
+For very large files:
+
+1. ByteStream.Write supports chunked uploads
+2. Upload can be resumed on failure
+3. Client tracks upload progress
+4. Retries only upload remaining chunks
+
+## Write Policies
+
+### Cache Isolation
+
+Instance names provide cache isolation:
+
+```bash
+# Production builds
+instance_name = "prod"
+
+# CI builds  
+instance_name = "ci"
+
+# Developer builds
+instance_name = "dev"
+```
+
+Benefits:
+- Prevent cache poisoning between environments
+- Different TTLs per instance
+- Separate quota management
+
+### TTL Configuration
+
+Cache entries expire after TTL:
+
+```yaml
+cache:
+  action_cache_ttl: 7d      # Action Cache entries
+  cas_ttl: 30d              # CAS blobs
+```
+
+### Size Limits
+
+Enforce blob size limits:
+
+```yaml
+cache:
+  max_blob_size: 100MB      # Single blob limit
+  max_batch_size: 4MB       # BatchUpdateBlobs limit
+```
+
+### Compression Settings
+
+Configure compression:
+
+```yaml
+cache:
+  enable_compression: true
+  compression_threshold: 1MB  # Compress blobs larger than this
+  compression_algorithm: zstd
+```
+
+## Error Handling
+
+### Upload Failures
+
+1. **Network Errors**: Bazel retries with exponential backoff
+2. **Digest Mismatch**: Upload rejected, client recomputes digest
+3. **Size Mismatch**: Upload rejected, client checks file
+4. **Storage Full**: Service returns RESOURCE_EXHAUSTED
+5. **Permission Denied**: Authentication or quota issue
+
+### Partial Writes
+
+1. ByteStream.Write supports resumable uploads
+2. Client tracks write_offset for resume
+3. Server stores partial upload in temporary location
+4. Upload completed when finish_write=true received
+5. Cleanup of abandoned uploads after timeout
+
+## Monitoring
+
+Key metrics to track:
+
+- **Upload Rate**: Bytes/second uploaded
+- **Upload Latency**: Time to upload blobs (p50, p95, p99)
+- **Deduplication Rate**: Percentage of blobs already cached
+- **Compression Ratio**: Compressed size / original size
+- **Upload Errors**: Failed uploads by error type
+- **Storage Growth**: Cache size over time
+
+## Performance Tuning
+
+### Client Configuration
+
+```bash
+# Bazel flags for upload performance
+bazel build \
+  --remote_cache=grpcs://remote.buildbuddy.io \
+  --remote_upload_local_results=true \
+  --remote_timeout=60s \
+  --remote_max_connections=100
+```
+
+### Server Configuration
+
+```yaml
+cache:
+  # Upload performance
+  max_concurrent_uploads: 1000
+  upload_timeout: 300s
+  
+  # Storage backend
+  storage:
+    gcs:
+      bucket: buildbuddy-cache
+      parallel_uploads: 10
+      chunk_size: 8MB
+```
+
+## Related Topics
+
+- [Cache Read Architecture](/architecture-cache-read)
+- [Remote Execution Architecture](/architecture-remote-build)
+- [Data Storage Overview](/architecture-data-storage)
+- [Architecture Overview](/architecture-overview)

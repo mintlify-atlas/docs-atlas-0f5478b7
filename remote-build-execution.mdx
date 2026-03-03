@@ -1,0 +1,86 @@
+---
+title: Remote Build Execution
+description: Highly scalable remote build execution service available as fully managed cloud or on-prem deployment
+---
+
+BuildBuddy provides a highly scalable remote build execution service. It's available both as a fully managed cloud service or on-prem.
+
+## Getting started
+
+<CardGroup cols={2}>
+  <Card title="Cloud RBE Setup" icon="cloud" href="/docs/rbe-setup">
+    Get started with BuildBuddy Cloud Remote Build Execution
+  </Card>
+  <Card title="On-prem RBE" icon="server" href="https://www.buildbuddy.io/request-quote">
+    Request a quote for BuildBuddy On-prem Remote Build Execution
+  </Card>
+</CardGroup>
+
+## Features
+
+BuildBuddy Remote Build Execution provides a comprehensive set of features designed for scalability and performance:
+
+<CardGroup cols={2}>
+  <Card title="Custom Docker Images" icon="docker">
+    Support for custom Docker images to match your build environment
+  </Card>
+  <Card title="Three-tier Caching" icon="layer-group">
+    Advanced three-tier artifact caching for optimal performance
+  </Card>
+  <Card title="Horizontal Scaling" icon="arrows-left-right">
+    Stateless, horizontally scalable architecture
+  </Card>
+  <Card title="Auto Scaling" icon="chart-line">
+    Automatic executor scaling based on demand
+  </Card>
+  <Card title="mTLS Authentication" icon="shield-halved">
+    Secure authentication with mutual TLS
+  </Card>
+  <Card title="Build Without Bytes" icon="bolt">
+    Efficient builds without downloading all artifacts
+  </Card>
+  <Card title="Action Deduplication" icon="clone">
+    Action deduplication and merging for efficiency
+  </Card>
+  <Card title="Enterprise Support" icon="headset">
+    Dedicated support for enterprise customers
+  </Card>
+</CardGroup>
+
+## Why Remote Build Execution?
+
+Remote Build Execution (RBE) offers significant advantages over local builds:
+
+<AccordionGroup>
+  <Accordion title="Faster Builds" icon="gauge-high">
+    Distribute your build across many machines to dramatically reduce build times. What takes minutes locally can take seconds with RBE.
+  </Accordion>
+  
+  <Accordion title="Consistent Environment" icon="equals">
+    Execute builds in a consistent, hermetic environment. No more "works on my machine" issues.
+  </Accordion>
+  
+  <Accordion title="Better Caching" icon="database">
+    Share build artifacts across your entire team. When one developer builds something, everyone benefits from the cached results.
+  </Accordion>
+  
+  <Accordion title="Resource Efficiency" icon="leaf">
+    Offload resource-intensive builds from developer machines. Your laptop stays responsive while powerful remote machines handle the heavy lifting.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<Steps>
+  <Step title="Set up RBE">
+    Follow our [RBE Setup Guide](/docs/rbe-setup) to configure Remote Build Execution for your project.
+  </Step>
+  
+  <Step title="Optimize Configuration">
+    Learn about [advanced RBE configuration options](/docs/rbe-setup#configuration-options) to fine-tune performance.
+  </Step>
+  
+  <Step title="Integrate with CI">
+    Set up RBE with your CI system using [GitHub Actions](/docs/rbe-github-actions) or [BuildBuddy Workflows](/docs/workflows-setup).
+  </Step>
+</Steps>

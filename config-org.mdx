@@ -1,0 +1,28 @@
+---
+title: Organization Configuration
+sidebarTitle: Org
+---
+
+<Note>
+Your organization is only configurable in the [Enterprise version](/enterprise) of BuildBuddy.
+</Note>
+
+The org section allows you to configure your BuildBuddy organization.
+
+## Configuration Options
+
+<ParamField path="name" type="string">
+  The name of your organization, which is displayed on your organization's build history.
+</ParamField>
+
+<ParamField path="domain" type="string">
+  Your organization's email domain. If this is set, only users with email addresses in this domain will be able to register for a BuildBuddy account.
+</ParamField>
+
+## Example Configuration
+
+```yaml config.yaml
+org:
+  name: Acme Corp
+  domain: acme.com
+```

@@ -1,0 +1,105 @@
+---
+title: Architecture Overview
+description: High-level overview of BuildBuddy's architecture
+---
+
+BuildBuddy's architecture is designed to handle high-throughput build event streams, remote caching, and remote execution at scale. The system is built with modularity and scalability in mind, allowing different components to be deployed independently.
+
+## System Architecture
+
+![Architecture Overview](/architecture/architecture-overview.png)
+
+## Core Components
+
+### Frontend
+
+The frontend serves the BuildBuddy web UI and handles user authentication. It communicates with the backend services to retrieve build information and metrics.
+
+### API Server
+
+The API server exposes both gRPC and REST endpoints for programmatic access to BuildBuddy data. It handles:
+
+- Build event protocol (BEP) ingestion
+- Remote cache requests (CAS and Action Cache)
+- Remote execution requests
+- API v1 endpoints for querying build data
+
+### Build Event Handler
+
+Processes incoming build events from Bazel and other build tools. It:
+
+- Parses build event streams
+- Extracts metadata and test results
+- Stores invocation data in the database
+- Triggers webhooks and notifications
+
+### Cache Service
+
+Manages the remote cache, implementing the Remote Execution API:
+
+- Content Addressable Storage (CAS) for build artifacts
+- Action Cache for build action results
+- Supports multiple storage backends (disk, cloud storage)
+- Implements cache eviction policies
+
+### Execution Service
+
+Orchestrates remote execution of build actions:
+
+- Schedules actions on available executors
+- Manages executor pools
+- Handles action retries and failures
+- Reports execution progress
+
+### Executors
+
+Worker nodes that execute build actions:
+
+- Pull action inputs from cache
+- Execute build commands in isolated environments
+- Upload outputs back to cache
+- Support multiple platforms and configurations
+
+### Database
+
+Stores metadata about builds, users, and organizations:
+
+- Invocation metadata
+- User and organization data
+- API keys and authentication tokens
+- Supports MySQL and PostgreSQL
+
+### Storage Backend
+
+Persists build artifacts and cache data:
+
+- Supports local disk storage
+- Cloud storage (S3, GCS, Azure Blob)
+- Configurable compression and encryption
+
+## Data Flow
+
+The architecture supports several key data flows:
+
+1. **Build Event Ingestion**: Bazel sends build events to BuildBuddy via gRPC
+2. **Cache Reads/Writes**: Build actions interact with the cache service
+3. **Remote Execution**: Actions are distributed to executors and results cached
+4. **UI/API Queries**: Users and integrations retrieve build data
+
+## Scalability
+
+BuildBuddy is designed to scale horizontally:
+
+- API servers can be load balanced
+- Multiple executors can be added to increase build capacity
+- Cache storage can be distributed across multiple backends
+- Database can be replicated for read scalability
+
+## Related Topics
+
+- [Build Event Read Architecture](/architecture-build-event-read)
+- [Build Event Write Architecture](/architecture-build-event-write)
+- [Cache Read Architecture](/architecture-cache-read)
+- [Cache Write Architecture](/architecture-cache-write)
+- [Remote Execution Architecture](/architecture-remote-build)
+- [Data Storage Overview](/architecture-data-storage)

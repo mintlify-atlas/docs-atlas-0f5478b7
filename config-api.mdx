@@ -1,0 +1,27 @@
+---
+title: API Configuration
+sidebarTitle: API
+---
+
+<Note>
+The API is only configurable in the [Enterprise version](/enterprise) of BuildBuddy. For more information, view the [API Documentation](/enterprise-api).
+</Note>
+
+The API section enables the BuildBuddy API over both gRPC(s) and REST HTTP(s).
+
+## Configuration Options
+
+<ParamField path="enable_api" type="boolean">
+  Whether or not to enable the BuildBuddy API.
+</ParamField>
+
+<ParamField path="api_key" type="string">
+  The default API key to use for on-prem enterprise deploys with a single organization/group.
+</ParamField>
+
+## Example Configuration
+
+```yaml config.yaml
+api:
+  enable_api: true
+```

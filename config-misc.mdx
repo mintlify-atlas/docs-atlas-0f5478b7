@@ -1,0 +1,32 @@
+---
+title: Miscellaneous Configuration
+sidebarTitle: Misc
+---
+
+## BuildEventProxy Section
+
+The BuildEventProxy section configures proxy behavior, allowing BuildBuddy to forward build events to other build-event-protocol compatible servers.
+
+<Note>
+This section is **optional**.
+</Note>
+
+## Configuration Options
+
+<ParamField path="hosts" type="array">
+  A list of host strings that BuildBuddy should connect and forward events to.
+</ParamField>
+
+<ParamField path="buffer_size" type="integer">
+  The number of build events to buffer locally when proxying build events.
+</ParamField>
+
+## Example Configuration
+
+```yaml config.yaml
+build_event_proxy:
+  hosts:
+    - "grpc://localhost:1985"
+    - "grpc://events.buildbuddy.io:1985"
+  buffer_size: 1000
+```

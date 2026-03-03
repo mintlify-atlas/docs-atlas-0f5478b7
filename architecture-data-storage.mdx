@@ -1,0 +1,406 @@
+---
+title: Data Storage Architecture
+description: How BuildBuddy stores and manages build data across different storage systems
+---
+
+This document provides an overview of BuildBuddy's data storage architecture, including the different types of data stored, storage backends used, and data lifecycle management.
+
+## Architecture Diagram
+
+![Data Storage Architecture](/architecture/architecture-data-storage.png)
+
+## Overview
+
+BuildBuddy stores several types of data with different characteristics and requirements. The architecture separates structured metadata from large binary data, using appropriate storage systems for each.
+
+## Data Types
+
+### Structured Metadata
+
+Stored in relational database:
+
+**Invocation Data**:
+- Invocation ID, status, timing
+- User, commit SHA, branch
+- Command, pattern, exit code
+- Build metadata and workspace status
+
+**Target Data**:
+- Target labels and IDs
+- Target status and timing
+- Rule type and language
+- Tags and configuration
+
+**Action Data**:
+- Action IDs and configurations
+- File references (digests)
+- Test shard/run/attempt information
+- Execution metadata
+
+**User & Organization Data**:
+- User accounts and authentication
+- Organization memberships
+- API keys and permissions
+- Usage quotas and billing
+
+**Execution Data**:
+- Executor assignments
+- Task queue state
+- Execution timing and status
+
+### Binary Blob Data
+
+Stored in object storage:
+
+**Build Artifacts** (CAS - Content Addressable Storage):
+- Compiled binaries
+- Generated source files
+- Build intermediates
+- Input files
+
+**Build Logs**:
+- Bazel build logs
+- Test outputs (stdout/stderr)
+- Execution logs
+- Profiler outputs
+
+**Test Artifacts**:
+- Test logs and outputs
+- Test result files
+- Coverage reports
+- Test XML/JSON results
+
+**Action Cache Entries**:
+- Action results (mappings)
+- Output file references
+- Execution metadata
+
+## Storage Systems
+
+### Relational Database
+
+**Supported Databases**:
+- MySQL 5.7+
+- PostgreSQL 12+
+- SQLite (for local development)
+
+**Schema Design**:
+- Normalized schema for metadata
+- Indexes on common query patterns
+- Foreign keys for referential integrity
+- Partitioning for large tables
+
+**Key Tables**:
+```sql
+Invocations
+  - invocation_id (PK)
+  - user_id (FK)
+  - commit_sha (indexed)
+  - created_at (indexed)
+  - status, duration, etc.
+
+Targets
+  - invocation_id (FK)
+  - target_id (PK)
+  - label, status, timing
+  
+Actions
+  - invocation_id (FK)
+  - target_id (FK)
+  - action_id (PK)
+  - file references
+
+Users
+  - user_id (PK)
+  - organization_id (FK)
+  - email, auth info
+```
+
+**Performance Considerations**:
+- Connection pooling
+- Read replicas for query scaling
+- Query optimization and indexing
+- Regular vacuuming (PostgreSQL)
+
+### Object Storage (Blob Store)
+
+**Supported Backends**:
+
+**Local Disk**:
+```yaml
+storage:
+  disk:
+    root_directory: /data/buildbuddy
+```
+
+**Amazon S3**:
+```yaml
+storage:
+  aws_s3:
+    region: us-east-1
+    bucket: buildbuddy-cache
+    credentials_profile: default
+```
+
+**Google Cloud Storage**:
+```yaml
+storage:
+  gcs:
+    bucket: buildbuddy-cache
+    project_id: my-project
+    credentials_file: /path/to/credentials.json
+```
+
+**Azure Blob Storage**:
+```yaml
+storage:
+  azure:
+    account_name: buildbuddy
+    container_name: cache
+    account_key: <key>
+```
+
+**Storage Layout**:
+```
+{bucket}/
+  {instance_name}/
+    blobs/
+      {hash[0:2]}/
+        {hash[2:4]}/
+          {full_hash}_{size}
+    compressed-blobs/
+      zstd/
+        {hash[0:2]}/
+          {hash[2:4]}/
+            {full_hash}_{size}
+    ac/
+      {action_hash}_{size}
+```
+
+**Features**:
+- Content addressing (SHA256)
+- Automatic deduplication
+- Optional compression (zstd)
+- Encryption at rest
+- Multi-region replication
+
+### Cache Layers
+
+Multi-tier caching for performance:
+
+**1. In-Memory Cache**:
+- LRU eviction
+- Hot data (ActionResults, small blobs)
+- Typical size: 1-10 GB
+- Fastest access (microseconds)
+
+**2. Local Disk Cache**:
+- Recently accessed blobs
+- Typical size: 50-500 GB
+- Fast access (milliseconds)
+- Reduces cloud storage API calls
+
+**3. Cloud Object Storage**:
+- Long-term persistence
+- Unlimited size
+- Higher latency (10-100ms)
+- Most cost-effective for large datasets
+
+## Data Lifecycle
+
+### Ingestion Flow
+
+1. **Build Event Ingestion**:
+   - Bazel streams build events to BuildBuddy
+   - Events parsed and validated
+   - Metadata extracted and stored in database
+   - File references noted for later retrieval
+
+2. **Artifact Upload**:
+   - Bazel uploads build outputs to CAS
+   - Digests computed (SHA256)
+   - Blobs written to object storage
+   - Stored in multiple cache tiers
+
+3. **Action Cache Update**:
+   - After successful action execution
+   - ActionResult mapped to action digest
+   - Stored for future cache hits
+
+### Retention and TTL
+
+**Database Retention**:
+```yaml
+retention:
+  invocations:
+    default_ttl: 90d
+    failed_invocations_ttl: 30d
+  
+  # Keep certain invocations indefinitely
+  permanent_tags:
+    - release
+    - production
+```
+
+**Cache Retention**:
+```yaml
+cache:
+  action_cache:
+    ttl: 7d              # Action results expire after 7 days
+    max_size: 1TB
+    
+  cas:
+    ttl: 30d             # CAS blobs expire after 30 days
+    max_size: 10TB
+```
+
+**Cleanup Process**:
+1. Background job runs periodically
+2. Identifies expired data based on TTL
+3. Deletes expired database records
+4. Removes unreferenced blobs from storage
+5. Updates usage metrics
+
+### Backup and Recovery
+
+**Database Backups**:
+- Daily full backups
+- Continuous transaction log archival
+- Point-in-time recovery capability
+- Tested restore procedures
+
+**Object Storage**:
+- Built-in durability (11 9's for S3/GCS)
+- Cross-region replication
+- Versioning for critical data
+- Lifecycle policies for archival
+
+## Data Access Patterns
+
+### Write Patterns
+
+1. **High-volume writes during builds**:
+   - Batched database inserts
+   - Parallel blob uploads
+   - Write-through caching
+
+2. **Action cache updates**:
+   - Frequent small writes
+   - Overwrite existing entries
+   - Fast commit required
+
+### Read Patterns
+
+1. **UI page loads**:
+   - Query invocation metadata
+   - Load associated targets/actions
+   - Lazy-load logs and artifacts
+
+2. **Cache reads during builds**:
+   - High QPS for ActionResults
+   - Large blob downloads from CAS
+   - Concurrent reads from many clients
+
+3. **API queries**:
+   - Filter by commit SHA, branch
+   - Paginated result sets
+   - Aggregations and analytics
+
+## Scalability
+
+### Database Scaling
+
+**Vertical Scaling**:
+- Increase CPU, memory, IOPS
+- Sufficient for most deployments
+
+**Horizontal Scaling**:
+- Read replicas for query distribution
+- Sharding by organization or date
+- Connection pooling
+
+### Storage Scaling
+
+**Horizontal Scaling**:
+- Cloud object storage scales automatically
+- Add more disk nodes for local storage
+- CDN for geographically distributed access
+
+**Cost Optimization**:
+- Storage tiering (hot/warm/cold)
+- Compression for large objects
+- Deduplication reduces storage
+- Lifecycle policies move to cheaper storage
+
+## Monitoring and Metrics
+
+### Database Metrics
+
+- Query latency (p50, p95, p99)
+- Connection pool utilization
+- Slow query log analysis
+- Table sizes and growth rate
+- Replication lag (if using replicas)
+
+### Storage Metrics
+
+- Total storage used (by type)
+- Storage growth rate
+- Cache hit rates (by tier)
+- Blob access frequency
+- Storage backend errors
+- Deduplication savings
+
+### Data Quality Metrics
+
+- Orphaned blobs (no references)
+- Missing blobs (referenced but not found)
+- Data corruption events
+- Backup success rate
+
+## Configuration Example
+
+```yaml
+database:
+  type: mysql
+  host: localhost:3306
+  name: buildbuddy
+  username: buildbuddy
+  password: <password>
+  max_open_conns: 100
+  max_idle_conns: 10
+  conn_max_lifetime: 1h
+
+storage:
+  # Multi-tier storage configuration
+  disk:
+    root_directory: /data/buildbuddy/cache
+    max_size_bytes: 100GB
+  
+  gcs:
+    bucket: buildbuddy-prod-cache
+    project_id: buildbuddy-prod
+    credentials_file: /secrets/gcs-credentials.json
+  
+  # Cache layers
+  cache:
+    in_memory_cache:
+      max_size_bytes: 1GB
+    
+    disk_cache:
+      max_size_bytes: 50GB
+
+retention:
+  invocations:
+    default_ttl: 90d
+  cache:
+    action_cache_ttl: 7d
+    cas_ttl: 30d
+```
+
+## Related Topics
+
+- [Architecture Overview](/architecture-overview)
+- [Cache Read Architecture](/architecture-cache-read)
+- [Cache Write Architecture](/architecture-cache-write)
+- [Build Event Write Architecture](/architecture-build-event-write)

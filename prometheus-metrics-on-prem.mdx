@@ -1,0 +1,395 @@
+---
+title: Prometheus Metrics On-Prem
+description: Monitor self-hosted BuildBuddy instances with Prometheus
+---
+
+BuildBuddy exposes [Prometheus](https://prometheus.io) metrics that allow monitoring the [four golden signals](https://landing.google.com/sre/sre-book/chapters/monitoring-distributed-systems/): latency, traffic, errors, and saturation.
+
+## Overview
+
+On-prem BuildBuddy deployments expose detailed operational metrics for:
+
+- Server health and performance
+- Request rates and latency
+- Cache performance
+- Remote execution metrics
+- Database and storage metrics
+- Resource utilization
+
+## Endpoint
+
+Prometheus metrics are exposed under the path:
+
+```
+http://your-buildbuddy-server:9090/metrics/
+```
+
+**Default configuration**:
+- Port: `9090`
+- Path: `/metrics/`
+- Format: Prometheus text format
+
+## Configuration
+
+### BuildBuddy Server
+
+Metrics are enabled by default. You can customize the port:
+
+```yaml
+# config.yaml
+app:
+  monitoring_port: 9090  # Change if needed
+```
+
+### Prometheus Scrape Config
+
+Add BuildBuddy to your Prometheus scrape configuration:
+
+```yaml
+# prometheus.yml
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'buildbuddy'
+    static_configs:
+      - targets: ['buildbuddy-server:9090']
+    metrics_path: '/metrics/'
+```
+
+### Multiple Instances
+
+For multiple BuildBuddy servers:
+
+```yaml
+scrape_configs:
+  - job_name: 'buildbuddy'
+    static_configs:
+      - targets:
+        - 'buildbuddy-server-1:9090'
+        - 'buildbuddy-server-2:9090'
+        - 'buildbuddy-server-3:9090'
+    metrics_path: '/metrics/'
+```
+
+### Kubernetes Service Discovery
+
+For Kubernetes deployments:
+
+```yaml
+scrape_configs:
+  - job_name: 'buildbuddy'
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        action: keep
+        regex: buildbuddy
+      - source_labels: [__meta_kubernetes_pod_container_port_number]
+        action: keep
+        regex: "9090"
+```
+
+## Visualization with Grafana
+
+To view these metrics in a live-updating dashboard, we recommend using [Grafana](https://grafana.com).
+
+### Setup
+
+1. **Install Grafana**:
+   ```bash
+   # Using Docker
+   docker run -d -p 3000:3000 grafana/grafana
+   
+   # Or install via package manager
+   sudo apt-get install grafana
+   ```
+
+2. **Add Prometheus data source**:
+   - Navigate to Configuration > Data Sources
+   - Click "Add data source"
+   - Select Prometheus
+   - Enter Prometheus URL (e.g., `http://prometheus:9090`)
+   - Click "Save & Test"
+
+3. **Import BuildBuddy dashboard**:
+   - Go to Dashboards > Import
+   - Upload BuildBuddy dashboard JSON (if available)
+   - Or create custom dashboard
+
+### Example Dashboard Panels
+
+**Request Rate**:
+```promql
+sum(rate(buildbuddy_api_request_count[5m])) by (method)
+```
+
+**Request Latency (p95)**:
+```promql
+histogram_quantile(0.95, 
+  sum(rate(buildbuddy_api_request_duration_seconds_bucket[5m])) by (le, method)
+)
+```
+
+**Cache Hit Rate**:
+```promql
+sum(rate(buildbuddy_cache_hits[5m])) 
+/ 
+sum(rate(buildbuddy_cache_requests[5m]))
+```
+
+**Active Executors**:
+```promql
+buildbuddy_remote_execution_executors_connected
+```
+
+## Metric Categories
+
+### HTTP/gRPC Metrics
+
+- Request count by method and status
+- Request duration histograms
+- Request size histograms
+- Response size histograms
+- Concurrent requests
+
+### Cache Metrics
+
+- Cache hits and misses
+- Cache read/write bytes
+- Cache evictions
+- Cache size and utilization
+- Digest computation time
+
+### Remote Execution Metrics
+
+- Executors connected
+- Tasks queued, running, completed
+- Task duration histograms
+- Executor utilization
+- Upload/download bytes
+
+### Build Event Metrics
+
+- Build events received
+- Event processing duration
+- Events by type
+- Stream errors
+
+### Database Metrics
+
+- Query duration
+- Connection pool stats
+- Transaction counts
+- Slow queries
+
+### Storage Metrics
+
+- Bytes read/written
+- Object count
+- Storage errors
+- Backend latency
+
+### System Metrics
+
+- CPU usage
+- Memory usage
+- Goroutines
+- File descriptors
+- GC pause times
+
+## Alerting
+
+### Example Alert Rules
+
+Create alert rules in Prometheus:
+
+```yaml
+# alerts.yml
+groups:
+  - name: buildbuddy
+    interval: 30s
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(buildbuddy_api_request_count{status=~"5.."}[5m])) 
+          / 
+          sum(rate(buildbuddy_api_request_count[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate on BuildBuddy"
+          description: "Error rate is {{ $value | humanizePercentage }}"
+      
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95, 
+            sum(rate(buildbuddy_api_request_duration_seconds_bucket[5m])) by (le)
+          ) > 1.0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency on BuildBuddy"
+          description: "P95 latency is {{ $value }}s"
+      
+      - alert: CacheDegraded
+        expr: |
+          sum(rate(buildbuddy_cache_hits[5m])) 
+          / 
+          sum(rate(buildbuddy_cache_requests[5m])) < 0.5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low cache hit rate"
+          description: "Cache hit rate is {{ $value | humanizePercentage }}"
+      
+      - alert: NoExecutors
+        expr: buildbuddy_remote_execution_executors_connected == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No executors connected"
+          description: "Remote execution is unavailable"
+```
+
+### Alertmanager Integration
+
+Configure Alertmanager for notifications:
+
+```yaml
+# alertmanager.yml
+route:
+  receiver: 'default'
+  routes:
+    - match:
+        severity: critical
+      receiver: 'pagerduty'
+    - match:
+        severity: warning
+      receiver: 'slack'
+
+receivers:
+  - name: 'default'
+    email_configs:
+      - to: 'team@example.com'
+  
+  - name: 'pagerduty'
+    pagerduty_configs:
+      - service_key: '<key>'
+  
+  - name: 'slack'
+    slack_configs:
+      - api_url: '<webhook_url>'
+        channel: '#alerts'
+```
+
+## Performance Monitoring
+
+### Key Metrics to Monitor
+
+**Latency**:
+- API request duration (p50, p95, p99)
+- Cache read/write latency
+- Database query duration
+- Remote execution task duration
+
+**Traffic**:
+- Requests per second
+- Bytes transferred (cache, storage)
+- Build events per second
+- Active executors
+
+**Errors**:
+- HTTP/gRPC error rates
+- Cache errors
+- Storage errors
+- Execution failures
+
+**Saturation**:
+- CPU utilization
+- Memory usage
+- Disk usage
+- Connection pool utilization
+- Executor queue depth
+
+## Capacity Planning
+
+### Resource Utilization Queries
+
+**CPU Usage**:
+```promql
+rate(process_cpu_seconds_total[5m])
+```
+
+**Memory Usage**:
+```promql
+process_resident_memory_bytes
+```
+
+**Disk Usage**:
+```promql
+buildbuddy_storage_disk_bytes_used / buildbuddy_storage_disk_bytes_total
+```
+
+**Connection Pool**:
+```promql
+buildbuddy_database_connections_in_use / buildbuddy_database_connections_max
+```
+
+## Troubleshooting
+
+### Metrics not available
+
+1. Verify BuildBuddy is running:
+   ```bash
+   curl http://buildbuddy-server:9090/healthz
+   ```
+
+2. Check metrics endpoint:
+   ```bash
+   curl http://buildbuddy-server:9090/metrics/
+   ```
+
+3. Verify Prometheus can reach BuildBuddy:
+   - Check firewall rules
+   - Test network connectivity
+
+4. Check Prometheus logs:
+   ```bash
+   docker logs prometheus
+   ```
+
+### High cardinality
+
+If metrics cause performance issues:
+
+1. Reduce scrape frequency
+2. Use recording rules for expensive queries
+3. Drop high-cardinality labels
+4. Increase Prometheus resources
+
+## Best Practices
+
+1. **Set up dashboards early**: Establish baselines before issues occur
+2. **Configure alerts**: Be proactive about performance degradation
+3. **Monitor trends**: Look for gradual changes over time
+4. **Document incidents**: Note when alerts fire and resolution steps
+5. **Regular review**: Periodically review and update alert thresholds
+
+## Related Topics
+
+- [Prometheus Metrics for Cloud](/prometheus-metrics-for-cloud)
+- [Architecture Overview](/architecture-overview)
+
+<Info>
+For a complete list of available metrics with descriptions, build the BuildBuddy source:
+```bash
+bazel build //server/metrics/generate_docs
+```
+This generates comprehensive metric documentation at `bazel-bin/server/metrics/generate_docs/docs.mdx`
+</Info>

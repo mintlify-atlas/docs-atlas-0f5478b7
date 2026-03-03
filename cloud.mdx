@@ -1,0 +1,256 @@
+---
+title: BuildBuddy Cloud
+description: Fully managed SaaS solution for Enterprise Bazel features with remote caching, remote execution, and more
+---
+
+# BuildBuddy Cloud
+
+[Cloud BuildBuddy](https://app.buildbuddy.io/) is a fully managed SaaS solution for Enterprise Bazel features. It provides a results store & UI, remote build caching, remote build execution, and more.
+
+<Info>
+  BuildBuddy Cloud is **free for individuals and open source projects**. For companies, we offer an Enterprise version with advanced features like OIDC Auth, API access, and more.
+</Info>
+
+## Why BuildBuddy Cloud?
+
+<CardGroup cols={2}>
+  <Card title="Zero Infrastructure" icon="cloud">
+    No servers to manage, no maintenance required. Just configure and start building.
+  </Card>
+  <Card title="Global Scale" icon="globe">
+    Built on cloud infrastructure that scales automatically with your needs.
+  </Card>
+  <Card title="Always Up-to-Date" icon="arrows-rotate">
+    Get the latest features and improvements automatically without any manual updates.
+  </Card>
+  <Card title="Enterprise Ready" icon="building">
+    Advanced features like OIDC authentication, API access, and dedicated support available.
+  </Card>
+</CardGroup>
+
+## Quick Setup
+
+Getting started with BuildBuddy Cloud is incredibly simple:
+
+<Steps>
+  <Step title="Configure Bazel">
+    Add these two lines to a `.bazelrc` file in the root of your project:
+
+    ```bash .bazelrc
+    build --bes_results_url=https://app.buildbuddy.io/invocation/
+    build --bes_backend=grpcs://remote.buildbuddy.io
+    ```
+
+    <Info>
+      That's it! Just 2 lines and you're connected to BuildBuddy Cloud.
+    </Info>
+  </Step>
+
+  <Step title="Run a build">
+    When you build or test with Bazel, you'll see a URL to view your results:
+
+    ```shellsession
+    tylerw@lunchbox:~/buildbuddy-io/buildbuddy$ bazel build server:all
+    INFO: Streaming build results to: https://app.buildbuddy.io/invocation/24a37b8f-4cf2-4909-9522-3cc91d2ebfc4
+    INFO: Analyzed 13 targets (0 packages loaded, 0 targets configured).
+    INFO: Found 13 targets...
+    INFO: Elapsed time: 0.212s, Critical Path: 0.01s
+    INFO: 0 processes.
+    INFO: Streaming build results to: https://app.buildbuddy.io/invocation/24a37b8f-4cf2-4909-9522-3cc91d2ebfc4
+    INFO: Build completed successfully, 1 total action
+    ```
+
+    <Tip>
+      You can ⌘ + double-click (Mac) or Ctrl + double-click (Windows/Linux) on these URLs to quickly view the invocation's details.
+    </Tip>
+  </Step>
+</Steps>
+
+## Authentication Options
+
+BuildBuddy Cloud offers three authentication methods to suit different security requirements:
+
+<Tabs>
+  <Tab title="Unauthenticated">
+    ### Unauthenticated Access
+
+    Your build logs are uploaded over an **encrypted gRPCS/TLS connection** and accessible with anyone you share your BuildBuddy URL with, without credentials.
+
+    <Warning>
+      Builds will not be associated with any BuildBuddy account or organization. Anyone with the URL can view the build results.
+    </Warning>
+
+    **Best for:**
+    - Quick testing and evaluation
+    - Open source projects with public builds
+    - Prototyping and experimentation
+  </Tab>
+
+  <Tab title="API Key">
+    ### API Key Based Authentication
+
+    Your build logs are uploaded over an **encrypted gRPCS/TLS connection** and associated with your account.
+
+    **Benefits:**
+    - Builds are private to your organization
+    - Only your account and members of your BuildBuddy organization can view build logs
+    - Easy to set up and manage
+
+    **Setup:**
+    1. [Create](https://app.buildbuddy.io/) a BuildBuddy account
+    2. Visit the [Quickstart page](https://app.buildbuddy.io/docs/setup) to get your API key
+    3. Add the API key to your `.bazelrc` configuration
+  </Tab>
+
+  <Tab title="Certificate">
+    ### Certificate Based Authentication (mTLS)
+
+    Your build logs are uploaded over an **encrypted [mTLS](https://en.wikipedia.org/wiki/Mutual_authentication) (mutual TLS) connection** for maximum security.
+
+    **Benefits:**
+    - Highest level of security with mutual authentication
+    - Builds are private to your organization
+    - Only authenticated clients can upload build results
+    - Ideal for enterprise environments
+
+    **Setup:**
+    1. [Create](https://app.buildbuddy.io/) a BuildBuddy account
+    2. Visit the [Quickstart page](https://app.buildbuddy.io/docs/setup) for certificate configuration
+    3. Configure your `.bazelrc` with the certificate paths
+  </Tab>
+</Tabs>
+
+<Info>
+  For detailed authentication setup instructions, see our [Authentication Guide](guide-auth).
+</Info>
+
+## Cloud Features
+
+BuildBuddy Cloud includes all these powerful features:
+
+### Build Results & UI
+
+<CardGroup cols={2}>
+  <Card title="Build Summary" icon="chart-bar">
+    High-level overview including build initiator, duration, affected targets, and build status.
+  </Card>
+  <Card title="Detailed Logs" icon="file-lines">
+    Complete build logs with easy sharing for collaborative debugging.
+  </Card>
+  <Card title="Target Details" icon="bullseye">
+    See which targets and tests passed or failed with detailed information.
+  </Card>
+  <Card title="Timing Information" icon="clock">
+    Bazel profile logs displayed in human-readable format to identify bottlenecks.
+  </Card>
+</CardGroup>
+
+### Remote Build Cache
+
+Never rebuild the same artifacts twice. BuildBuddy Cloud includes:
+
+- Distributed cache shared across your team and CI
+- Automatic artifact deduplication
+- Support for both action cache and content-addressable storage
+- Built-in cache eviction policies
+
+### Remote Build Execution
+
+Speed up builds by distributing work across cloud executors:
+
+- High-performance executors in multiple regions
+- Automatic scaling based on demand
+- Support for multiple platforms (Linux x86_64, ARM64, macOS)
+- Docker and Firecracker isolation
+
+<Note>
+  For Remote Build Execution setup instructions, see our [RBE setup docs](rbe-setup).
+</Note>
+
+### Advanced Capabilities
+
+<Accordion title="Build Artifacts">
+  Quick access to all build artifacts generated by an invocation. Click to download artifacts directly from the UI.
+</Accordion>
+
+<Accordion title="Test Logs">
+  View test logs directly in the UI when you click on a test target. Requires GRPC remote cache.
+</Accordion>
+
+<Accordion title="Invocation Comparison">
+  Compare invocations to see what changed between builds. View differences in flags, environment variables, and more.
+</Accordion>
+
+<Accordion title="Dense UI Mode">
+  Increase information density with BuildBuddy's dense mode that packs more data into every view.
+</Accordion>
+
+## Getting More from BuildBuddy Cloud
+
+Once you have the basics configured, explore these additional features:
+
+<Steps>
+  <Step title="Enable Remote Caching">
+    Speed up builds by sharing build artifacts across your team and CI.
+    
+    Visit the [Quickstart page](https://app.buildbuddy.io/docs/setup) for cache configuration instructions.
+  </Step>
+
+  <Step title="Set up Remote Execution">
+    Distribute build actions across cloud executors for maximum performance.
+    
+    See our [RBE setup docs](rbe-setup) for detailed instructions.
+  </Step>
+
+  <Step title="Configure Team Access">
+    Invite team members to your organization and manage permissions.
+    
+    Available in your BuildBuddy account settings.
+  </Step>
+</Steps>
+
+## Enterprise Features
+
+For companies and larger teams, BuildBuddy Enterprise includes:
+
+<CardGroup cols={2}>
+  <Card title="OIDC Authentication" icon="id-card">
+    Single sign-on integration with your identity provider.
+  </Card>
+  <Card title="API Access" icon="code">
+    Programmatic access to BuildBuddy features and data.
+  </Card>
+  <Card title="Dedicated Support" icon="headset">
+    Priority support from the BuildBuddy team.
+  </Card>
+  <Card title="SLA Guarantees" icon="shield-check">
+    Service level agreements for uptime and performance.
+  </Card>
+  <Card title="Custom Executors" icon="server">
+    Bring your own infrastructure for remote execution.
+  </Card>
+  <Card title="Advanced Analytics" icon="chart-line">
+    Detailed insights into build performance and trends.
+  </Card>
+</CardGroup>
+
+<Info>
+  Interested in Enterprise features? Contact us at [hello@buildbuddy.io](mailto:hello@buildbuddy.io) or visit [buildbuddy.io](https://buildbuddy.io) to learn more.
+</Info>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Detailed setup instructions and configuration options
+  </Card>
+  <Card title="Authentication Guide" icon="key" href="/guide-auth">
+    Learn more about authentication methods and security
+  </Card>
+  <Card title="RBE Setup" icon="server" href="/rbe-setup">
+    Configure remote build execution for maximum performance
+  </Card>
+  <Card title="Join Our Community" icon="slack" href="https://community.buildbuddy.io">
+    Connect with other BuildBuddy users and get help
+  </Card>
+</CardGroup>
