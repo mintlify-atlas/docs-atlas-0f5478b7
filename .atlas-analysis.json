@@ -1,0 +1,194 @@
+{
+  "projectType": "saas",
+  "projectName": "BuildBuddy",
+  "projectDescription": "Open-source Bazel build event viewer, remote cache, and remote build execution platform",
+  "theme": "aspen",
+  "primaryColor": "#18BC9C",
+  "lightColor": "#1DB9A5",
+  "darkColor": "#0E9F87",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "cloud"
+            ]
+          },
+          {
+            "group": "Products",
+            "pages": [
+              "cli",
+              "cli-plugins",
+              "workflows-config",
+              "workflows-setup",
+              "remote-build-execution",
+              "rbe-setup",
+              "rbe-github-actions",
+              "remote-bazel"
+            ]
+          },
+          {
+            "group": "Features",
+            "pages": [
+              "rbe-platforms",
+              "rbe-pools",
+              "rbe-microvms",
+              "rbe-container-image-caching",
+              "remote-runner-introduction",
+              "remote-runner-features",
+              "secrets",
+              "cache-encryption-keys"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides",
+              "guide-auth",
+              "guide-metadata"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "on-prem",
+              "enterprise",
+              "enterprise-setup",
+              "enterprise-helm",
+              "enterprise-mac-rbe",
+              "enterprise-rbe"
+            ]
+          },
+          {
+            "group": "Contributing",
+            "pages": [
+              "contributing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Configuration",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "config",
+              "config-samples"
+            ]
+          },
+          {
+            "group": "Server Configuration",
+            "pages": [
+              "config-app",
+              "config-database",
+              "config-storage",
+              "config-cache",
+              "config-ssl",
+              "config-flags"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "config-auth",
+              "config-github",
+              "config-integrations",
+              "config-telemetry"
+            ]
+          },
+          {
+            "group": "Remote Execution",
+            "pages": [
+              "config-rbe",
+              "enterprise-config",
+              "config-olap-databases"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "config-all-options",
+              "config-api",
+              "config-org",
+              "config-misc"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "enterprise-api"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "architecture-overview",
+              "architecture-build-event-read",
+              "architecture-build-event-write",
+              "architecture-cache-read",
+              "architecture-cache-write",
+              "architecture-data-storage",
+              "architecture-remote-build",
+              "architecture-self-hosted-executor"
+            ]
+          },
+          {
+            "group": "Monitoring",
+            "pages": [
+              "prometheus-metrics-for-cloud",
+              "prometheus-metrics-on-prem"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Troubleshooting",
+        "groups": [
+          {
+            "group": "Help",
+            "pages": [
+              "troubleshooting",
+              "troubleshooting-rbe",
+              "troubleshooting-slow-upload"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Build event viewer with detailed insights",
+    "Remote caching for faster builds",
+    "Remote build execution (RBE)",
+    "BuildBuddy CLI for simplified auth and debugging",
+    "CI/CD workflows designed for Bazel",
+    "Remote Bazel with workspace snapshots",
+    "Enterprise authentication and access control",
+    "Self-hosted deployment options"
+  ],
+  "publicApiSurface": [
+    "GetInvocation",
+    "GetTarget",
+    "GetAction",
+    "GetLog",
+    "GetFile",
+    "ExecuteWorkflow",
+    "GetWorkflow",
+    "CreateApiKey",
+    "UpdateApiKey",
+    "DeleteApiKey",
+    "GetApiKey",
+    "GetApiKeys"
+  ]
+}
